@@ -51,6 +51,8 @@ jobs:
         run: |
             changed_files=(${{ steps.changes.outputs.anchor_files }})
             ProjectDirs=($(for file in "${changed_files[@]}"; do dirname "${file}" | grep anchor | sed 's#/anchor/.*#/anchor#g'; done | sort -u))
+            echo "Projects to Build:"
+            printf "%s\n" "${ProjectDirs[@]}"
             for projectDir in "${ProjectDirs[@]}"; do
               echo "
               ********
@@ -144,6 +146,8 @@ jobs:
         run: |
           changed_files=(${{ steps.changes.outputs.anchor_files }})
           ProjectDirs=($(for file in "${changed_files[@]}"; do dirname "${file}" | grep anchor | sed 's#/anchor/.*#/anchor#g'; done | sort -u))
+          echo "Projects to Test:"
+          printf "%s\n" "${ProjectDirs[@]}"
           for projectDir in "${ProjectDirs[@]}"; do
             echo "
             ********
