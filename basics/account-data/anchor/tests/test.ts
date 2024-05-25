@@ -16,7 +16,7 @@ describe("Account Data!", () => {
     console.log(`Payer Address      : ${payer.publicKey}`)
     console.log(`Address Info Acct  : ${addressInfoAccount.publicKey}`)
 
-    // Instruction data
+    // Instruction Ix data
     const addressInfo = {
       name: "Joe C",
       houseNumber: 136,
