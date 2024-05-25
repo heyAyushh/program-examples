@@ -49,8 +49,6 @@ jobs:
       - name: Build Changed Anchor programs
         if: ${{ steps.changes.outputs.anchor == 'true' }}
         run: |
-          if [ -n "${{ github.event.pull_request }}" ]; then
-            echo "Triggered by PR"
             changed_files=(${{ steps.changes.outputs.anchor_files }})
             ProjectDirs=($(for file in "${changed_files[@]}"; do dirname "${file}" | grep anchor | sed 's#/anchor/.*#/anchor#g'; done | sort -u))
 
@@ -133,7 +131,7 @@ jobs:
           anchor -V
           npm i -g pnpm
       # Run only if it's triggered by PR to main,
-      # Test the changed programs
+      # Test the changed programs (if any)
       - uses: dorny/paths-filter@v3
         if: github.event_name == 'pull_request'
         id: changes
@@ -145,8 +143,6 @@ jobs:
       - name: Test Changed Anchor Programs
         if: ${{ steps.changes.outputs.anchor == 'true' }}
         run: |
-          if [ -n "${{ github.event.pull_request }}" ]; then
-          echo "Triggered by PR"
           changed_files=(${{ steps.changes.outputs.anchor_files }})
           ProjectDirs=($(for file in "${changed_files[@]}"; do dirname "${file}" | grep anchor | sed 's#/anchor/.*#/anchor#g'; done | sort -u))
           for projectDir in "${ProjectDirs[@]}"; do
