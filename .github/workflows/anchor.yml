@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Anchor
-        uses: heyAyushh/setup-anchor@v2.6
+        uses: heyAyushh/setup-anchor@v2.7
         with:
           anchor-version: ${{ matrix.anchor-version }}
           solana-cli-version: ${{ matrix.solana-version }}
@@ -51,7 +51,6 @@ jobs:
         run: |
             changed_files=(${{ steps.changes.outputs.anchor_files }})
             ProjectDirs=($(for file in "${changed_files[@]}"; do dirname "${file}" | grep anchor | sed 's#/anchor/.*#/anchor#g'; done | sort -u))
-
             for projectDir in "${ProjectDirs[@]}"; do
               echo "
               ********
@@ -118,7 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Anchor
-        uses: heyAyushh/setup-anchor@v2.6
+        uses: heyAyushh/setup-anchor@v2.7
         with:
           anchor-version: ${{ matrix.anchor-version }}
           solana-cli-version: ${{ matrix.solana-version }}
