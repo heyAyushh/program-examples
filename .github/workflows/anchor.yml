@@ -39,7 +39,7 @@ jobs:
       # Run only if it's triggered by PR to main,
       # Build the changed programs
       - uses: dorny/paths-filter@v3
-        if: ${{ github.event.pull_request == 'true' }}
+        if: github.event_name == 'pull_request'
         id: changes
         with:
           list-files: shell
@@ -80,7 +80,7 @@ jobs:
         shell: bash
       # Skip Building all Programs if it's a PR to main branch
       - name: Build All Anchor programs
-        if: ${{ github.event.pull_request != 'true' }}
+        if: github.event_name != 'pull_request'
         run: |
           declare -a ProjectDirs=($(find . -type d -name "anchor"))
           for projectDir in "${ProjectDirs[@]}"; do
@@ -135,7 +135,7 @@ jobs:
       # Run only if it's triggered by PR to main,
       # Test the changed programs
       - uses: dorny/paths-filter@v3
-        if: ${{ github.event.pull_request == 'true' }}
+        if: github.event_name == 'pull_request'
         id: changes
         with:
           list-files: shell
@@ -176,7 +176,8 @@ jobs:
           fi
         shell: bash
       # Skip Testing all Programs if it's a PR to main branch
-      - name: Test anchor programs
+      - name: Test All Anchor Programs
+        if: github.event_name != 'pull_request'
         run: |
           declare -a ProjectDirs=($(find . -type d -name "anchor"))
           for projectDir in "${ProjectDirs[@]}"; do
