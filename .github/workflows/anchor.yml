@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Anchor
-        uses: heyAyushh/setup-anchor@v3.1
+        uses: heyAyushh/setup-anchor@v3.2
         with:
           anchor-version: ${{ matrix.anchor-version }}
           solana-cli-version: ${{ matrix.solana-version }}
@@ -117,7 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Anchor
-        uses: heyAyushh/setup-anchor@v3.1
+        uses: heyAyushh/setup-anchor@v3.2
         with:
           anchor-version: ${{ matrix.anchor-version }}
           solana-cli-version: ${{ matrix.solana-version }}
