@@ -5,9 +5,9 @@
  * See: https://github.com/metaplex-foundation/solita
  */
 
-import * as beet from '@metaplex-foundation/beet'
-import * as web3 from '@solana/web3.js'
-import { AddCarArgs, addCarArgsBeet } from '../types/AddCarArgs'
+import * as beet from "@metaplex-foundation/beet";
+import * as web3 from "@solana/web3.js";
+import { type AddCarArgs, addCarArgsBeet } from "../types/AddCarArgs";
 
 /**
  * @category Instructions
@@ -15,24 +15,24 @@ import { AddCarArgs, addCarArgsBeet } from '../types/AddCarArgs'
  * @category generated
  */
 export type AddCarInstructionArgs = {
-  addCarArgs: AddCarArgs
-}
+	addCarArgs: AddCarArgs;
+};
 /**
  * @category Instructions
  * @category AddCar
  * @category generated
  */
 export const AddCarStruct = new beet.FixableBeetArgsStruct<
-  AddCarInstructionArgs & {
-    instructionDiscriminator: number
-  }
+	AddCarInstructionArgs & {
+		instructionDiscriminator: number;
+	}
 >(
-  [
-    ['instructionDiscriminator', beet.u8],
-    ['addCarArgs', addCarArgsBeet],
-  ],
-  'AddCarInstructionArgs'
-)
+	[
+		["instructionDiscriminator", beet.u8],
+		["addCarArgs", addCarArgsBeet],
+	],
+	"AddCarInstructionArgs",
+);
 /**
  * Accounts required by the _AddCar_ instruction
  *
@@ -43,12 +43,12 @@ export const AddCarStruct = new beet.FixableBeetArgsStruct<
  * @category generated
  */
 export type AddCarInstructionAccounts = {
-  carAccount: web3.PublicKey
-  payer: web3.PublicKey
-  systemProgram?: web3.PublicKey
-}
+	carAccount: web3.PublicKey;
+	payer: web3.PublicKey;
+	systemProgram?: web3.PublicKey;
+};
 
-export const addCarInstructionDiscriminator = 0
+export const addCarInstructionDiscriminator = 0;
 
 /**
  * Creates a _AddCar_ instruction.
@@ -61,36 +61,38 @@ export const addCarInstructionDiscriminator = 0
  * @category generated
  */
 export function createAddCarInstruction(
-  accounts: AddCarInstructionAccounts,
-  args: AddCarInstructionArgs,
-  programId = new web3.PublicKey('8avNGHVXDwsELJaWMSoUZ44CirQd4zyU9Ez4ZmP4jNjZ')
+	accounts: AddCarInstructionAccounts,
+	args: AddCarInstructionArgs,
+	programId = new web3.PublicKey(
+		"8avNGHVXDwsELJaWMSoUZ44CirQd4zyU9Ez4ZmP4jNjZ",
+	),
 ) {
-  const [data] = AddCarStruct.serialize({
-    instructionDiscriminator: addCarInstructionDiscriminator,
-    ...args,
-  })
-  const keys: web3.AccountMeta[] = [
-    {
-      pubkey: accounts.carAccount,
-      isWritable: true,
-      isSigner: false,
-    },
-    {
-      pubkey: accounts.payer,
-      isWritable: true,
-      isSigner: false,
-    },
-    {
-      pubkey: accounts.systemProgram ?? web3.SystemProgram.programId,
-      isWritable: false,
-      isSigner: false,
-    },
-  ]
+	const [data] = AddCarStruct.serialize({
+		instructionDiscriminator: addCarInstructionDiscriminator,
+		...args,
+	});
+	const keys: web3.AccountMeta[] = [
+		{
+			pubkey: accounts.carAccount,
+			isWritable: true,
+			isSigner: false,
+		},
+		{
+			pubkey: accounts.payer,
+			isWritable: true,
+			isSigner: false,
+		},
+		{
+			pubkey: accounts.systemProgram ?? web3.SystemProgram.programId,
+			isWritable: false,
+			isSigner: false,
+		},
+	];
 
-  const ix = new web3.TransactionInstruction({
-    programId,
-    keys,
-    data,
-  })
-  return ix
+	const ix = new web3.TransactionInstruction({
+		programId,
+		keys,
+		data,
+	});
+	return ix;
 }

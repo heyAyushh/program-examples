@@ -1,0 +1,29 @@
+{
+	"$schema": "https://biomejs.dev/schemas/1.7.3/schema.json",
+	"organizeImports": {
+		"enabled": true
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"suspicious": {
+				"noExplicitAny": "off",
+				"noAssignInExpressions": "warn",
+				"noExportsInTest": "warn"
+			},
+			"style": {
+				"noParameterAssign": "warn"
+			},
+			"complexity": {
+				"noForEach": "warn",
+				"noUselessCatch": "warn",
+				"noBannedTypes": "warn"
+			}
+		}
+	},
+	"files": {
+		"ignore": ["node_modules"],
+		"include": ["**/*.ts", "**/*.js", "**/*.json"]
+	}
+}

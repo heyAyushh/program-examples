@@ -5,9 +5,12 @@
  * See: https://github.com/metaplex-foundation/solita
  */
 
-import * as beet from '@metaplex-foundation/beet'
-import * as web3 from '@solana/web3.js'
-import { BookRentalArgs, bookRentalArgsBeet } from '../types/BookRentalArgs'
+import * as beet from "@metaplex-foundation/beet";
+import * as web3 from "@solana/web3.js";
+import {
+	type BookRentalArgs,
+	bookRentalArgsBeet,
+} from "../types/BookRentalArgs";
 
 /**
  * @category Instructions
@@ -15,24 +18,24 @@ import { BookRentalArgs, bookRentalArgsBeet } from '../types/BookRentalArgs'
  * @category generated
  */
 export type BookRentalInstructionArgs = {
-  bookRentalArgs: BookRentalArgs
-}
+	bookRentalArgs: BookRentalArgs;
+};
 /**
  * @category Instructions
  * @category BookRental
  * @category generated
  */
 export const BookRentalStruct = new beet.FixableBeetArgsStruct<
-  BookRentalInstructionArgs & {
-    instructionDiscriminator: number
-  }
+	BookRentalInstructionArgs & {
+		instructionDiscriminator: number;
+	}
 >(
-  [
-    ['instructionDiscriminator', beet.u8],
-    ['bookRentalArgs', bookRentalArgsBeet],
-  ],
-  'BookRentalInstructionArgs'
-)
+	[
+		["instructionDiscriminator", beet.u8],
+		["bookRentalArgs", bookRentalArgsBeet],
+	],
+	"BookRentalInstructionArgs",
+);
 /**
  * Accounts required by the _BookRental_ instruction
  *
@@ -44,13 +47,13 @@ export const BookRentalStruct = new beet.FixableBeetArgsStruct<
  * @category generated
  */
 export type BookRentalInstructionAccounts = {
-  rentalAccount: web3.PublicKey
-  carAccount: web3.PublicKey
-  payer: web3.PublicKey
-  systemProgram?: web3.PublicKey
-}
+	rentalAccount: web3.PublicKey;
+	carAccount: web3.PublicKey;
+	payer: web3.PublicKey;
+	systemProgram?: web3.PublicKey;
+};
 
-export const bookRentalInstructionDiscriminator = 1
+export const bookRentalInstructionDiscriminator = 1;
 
 /**
  * Creates a _BookRental_ instruction.
@@ -63,41 +66,43 @@ export const bookRentalInstructionDiscriminator = 1
  * @category generated
  */
 export function createBookRentalInstruction(
-  accounts: BookRentalInstructionAccounts,
-  args: BookRentalInstructionArgs,
-  programId = new web3.PublicKey('8avNGHVXDwsELJaWMSoUZ44CirQd4zyU9Ez4ZmP4jNjZ')
+	accounts: BookRentalInstructionAccounts,
+	args: BookRentalInstructionArgs,
+	programId = new web3.PublicKey(
+		"8avNGHVXDwsELJaWMSoUZ44CirQd4zyU9Ez4ZmP4jNjZ",
+	),
 ) {
-  const [data] = BookRentalStruct.serialize({
-    instructionDiscriminator: bookRentalInstructionDiscriminator,
-    ...args,
-  })
-  const keys: web3.AccountMeta[] = [
-    {
-      pubkey: accounts.rentalAccount,
-      isWritable: true,
-      isSigner: false,
-    },
-    {
-      pubkey: accounts.carAccount,
-      isWritable: false,
-      isSigner: false,
-    },
-    {
-      pubkey: accounts.payer,
-      isWritable: true,
-      isSigner: false,
-    },
-    {
-      pubkey: accounts.systemProgram ?? web3.SystemProgram.programId,
-      isWritable: false,
-      isSigner: false,
-    },
-  ]
+	const [data] = BookRentalStruct.serialize({
+		instructionDiscriminator: bookRentalInstructionDiscriminator,
+		...args,
+	});
+	const keys: web3.AccountMeta[] = [
+		{
+			pubkey: accounts.rentalAccount,
+			isWritable: true,
+			isSigner: false,
+		},
+		{
+			pubkey: accounts.carAccount,
+			isWritable: false,
+			isSigner: false,
+		},
+		{
+			pubkey: accounts.payer,
+			isWritable: true,
+			isSigner: false,
+		},
+		{
+			pubkey: accounts.systemProgram ?? web3.SystemProgram.programId,
+			isWritable: false,
+			isSigner: false,
+		},
+	];
 
-  const ix = new web3.TransactionInstruction({
-    programId,
-    keys,
-    data,
-  })
-  return ix
+	const ix = new web3.TransactionInstruction({
+		programId,
+		keys,
+		data,
+	});
+	return ix;
 }
