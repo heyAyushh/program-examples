@@ -14,5 +14,4 @@ jobs:
         uses: biomejs/setup-biome@v2
       - name: Run Biome
         run: |
-          ls
-          biome ci ./
+          biome ci ./ --config-path biome.json
