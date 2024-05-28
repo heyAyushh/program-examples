@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
+import { describe, test } from "node:test";
 import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import {
-	Connection,
 	Keypair,
 	PublicKey,
 	SYSVAR_RENT_PUBKEY,
@@ -10,9 +10,8 @@ import {
 	TransactionInstruction,
 } from "@solana/web3.js";
 import * as borsh from "borsh";
-import { start } from "solana-bankrun";
-import { describe, test } from "node:test";
 import { assert } from "chai";
+import { start } from "solana-bankrun";
 
 class Assignable {
 	constructor(properties) {
