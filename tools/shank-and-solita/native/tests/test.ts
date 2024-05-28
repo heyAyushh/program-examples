@@ -88,6 +88,7 @@ describe("Car Rental Service", () => {
 		console.log(`   Model   : ${carData.model}`);
 		return carAccountPublicKey;
 	}
+
 	it("Create a car that can be rented", async () => {
 		bmwPublicKey = await createCar(carBmw);
 	});
