@@ -2,8 +2,12 @@ name: Typescript Code quality
 
 on:
   push:
+    branches:
+      - main
   pull_request:
-
+    types: [ opened, synchronize, reopened ]
+    branches:
+      - main
 jobs:
   quality:
     runs-on: ubuntu-latest
