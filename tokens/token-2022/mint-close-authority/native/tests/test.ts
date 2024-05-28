@@ -40,7 +40,12 @@ const CreateTokenArgsSchema = new Map([
 describe("Create Token", async () => {
 	const PROGRAM_ID = PublicKey.unique();
 	const context = await start(
-		[{ name: "token_2022_mint_close_authority_program", programId: PROGRAM_ID }],
+		[
+			{
+				name: "token_2022_mint_close_authority_program",
+				programId: PROGRAM_ID,
+			},
+		],
 		[],
 	);
 	const client = context.banksClient;

@@ -37,7 +37,7 @@ const CreateTokenArgsSchema = new Map([
 ]);
 
 describe("Create Token", async () => {
-  const PROGRAM_ID = PublicKey.unique();
+	const PROGRAM_ID = PublicKey.unique();
 	const context = await start(
 		[{ name: "token_2022_multiple_extensions_program", programId: PROGRAM_ID }],
 		[],
@@ -46,7 +46,7 @@ describe("Create Token", async () => {
 	const payer = context.payer;
 
 	test("Create a Token-22 SPL-Token !", async () => {
-	const blockhash = context.lastBlockhash;
+		const blockhash = context.lastBlockhash;
 		const mintKeypair: Keypair = Keypair.generate();
 
 		const instructionData = new CreateTokenArgs({

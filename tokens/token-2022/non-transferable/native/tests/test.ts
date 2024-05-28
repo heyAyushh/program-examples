@@ -46,7 +46,7 @@ describe("Create Token", async () => {
 	const payer = context.payer;
 
 	test("Create a Token-22 SPL-Token !", async () => {
-	const blockhash = context.lastBlockhash;
+		const blockhash = context.lastBlockhash;
 		const mintKeypair: Keypair = Keypair.generate();
 
 		const instructionData = new CreateTokenArgs({
