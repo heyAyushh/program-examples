@@ -19,3 +19,6 @@
 
 ./compression/cutils/anchor
 ./compression/cnft-vault/anchor
+
+./tokens/token-2022/transfer-hook/anchor
+./tokens/token-2022/nft-meta-data-pointer/anchor-example/anchor

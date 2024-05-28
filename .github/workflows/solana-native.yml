@@ -44,7 +44,7 @@ jobs:
             Building $projectDir
             ********"
             cd $projectDir
-            if cargo-build-sbf --verbose; then
+            if pnpm build; then
               echo "Build succeeded for $projectDir."
             else
               failed=true
@@ -97,7 +97,7 @@ jobs:
             ********"
             cd $projectDir
             pnpm install --frozen-lockfile
-            if (cargo build-sbf --manifest-path=./program/Cargo.toml --sbf-out-dir=./tests/fixtures && pnpm test); then
+            if pnpm build-and-test; then
               echo "Tests succeeded for $projectDir."
             else
               failed=true

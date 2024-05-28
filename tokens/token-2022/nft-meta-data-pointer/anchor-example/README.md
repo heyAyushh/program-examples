@@ -1,16 +1,16 @@
-## Token Extension MetaData Pointer NFT 
+## Token Extension MetaData Pointer NFT
 
 This is a simple example of a program that creates a NFT using the new token extension program and facilitating the token extension meta data pointer.
 
 The cool thing about this especially for games is that we can now have additional metadata fields on chain as a key value store which can be used to save the state of the game character. In this example we save the level and the collected wood of the player.
 
-This opens all kind of interesting possibilities for games. You can for example save the level and xp of the player, the current weapon and armor, the current quest and so on. When market places will eventually support additional meta data the nfts could be filtered and ordered by the meta data fields and NFTs with better values like higher level could potentially gain more value by playing. 
+This opens all kind of interesting possibilities for games. You can for example save the level and xp of the player, the current weapon and armor, the current quest and so on. When market places will eventually support additional meta data the nfts could be filtered and ordered by the meta data fields and NFTs with better values like higher level could potentially gain more value by playing.
 
-The nft will be created in an anchor program so it is very easy to mint from the js client. The name, uri and symbol are saved in the meta data extension which is pointed to the mint. 
+The nft will be created in an anchor program so it is very easy to mint from the js client. The name, uri and symbol are saved in the meta data extension which is pointed to the mint.
 
 The nft will have a name, symbol and a uri. The uri is a link to a json file which contains the meta data of the nft.
 
-There is a video walkthrough of this example on the Solana Foundation Youtube channel. 
+There is a video walkthrough of this example on the Solana Foundation Youtube channel.
 
 [![Solana Foundation Youtube channel]](https://www.youtube.com/@SolanaFndn/videos)
 
@@ -25,7 +25,7 @@ anchor test --detach
 
 Then you can set your https://solana.explorer.com url to local net an look at the transactions.
 
-The program is also already deployed to dev net so you can try it out on dev net. 
+The program is also already deployed to dev net so you can try it out on dev net.
 Starting the js client
 
 ```shell
@@ -34,9 +34,9 @@ yarn install
 yarn dev
 ```
 
-# Minting the NFT 
+# Minting the NFT
 
-For the creating of the NFT we perform the following steps: 
+For the creating of the NFT we perform the following steps:
 
 1. Create a mint account
 2. Initialize the mint account
@@ -54,10 +54,10 @@ Here is the rust code for the minting of the NFT:
 let space = ExtensionType::try_calculate_account_len::<Mint>(
         &[ExtensionType::MetadataPointer])
         .unwrap();
-    
-    // This is the space required for the metadata account. 
-    // We put the meta data into the mint account at the end so we 
-    // don't need to create and additional account. 
+
+    // This is the space required for the metadata account.
+    // We put the meta data into the mint account at the end so we
+    // don't need to create and additional account.
     let meta_data_space = 250;
 
     let lamports_required = (Rent::get()?).minimum_balance(space + meta_data_space);
@@ -93,7 +93,7 @@ let space = ExtensionType::try_calculate_account_len::<Mint>(
     )?;
 
     // Initialize the metadata pointer (Need to do this before initializing the mint)
-    let init_meta_data_pointer_ix = 
+    let init_meta_data_pointer_ix =
     spl_token_2022::extension::metadata_pointer::instruction::initialize(
         &Token2022::id(),
         &ctx.accounts.mint.key(),
@@ -101,7 +101,7 @@ let space = ExtensionType::try_calculate_account_len::<Mint>(
         Some(ctx.accounts.mint.key()),
     )
     .unwrap();
-    
+
     invoke(
         &init_meta_data_pointer_ix,
         &[
@@ -109,7 +109,7 @@ let space = ExtensionType::try_calculate_account_len::<Mint>(
             ctx.accounts.nft_authority.to_account_info()
         ],
     )?;
-    
+
     // Initialize the mint cpi
     let mint_cpi_ix = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
@@ -123,8 +123,8 @@ let space = ExtensionType::try_calculate_account_len::<Mint>(
         0,
         &ctx.accounts.nft_authority.key(),
         None).unwrap();
-    
-    // We use a PDA as a mint authority for the metadata account because 
+
+    // We use a PDA as a mint authority for the metadata account because
     // we want to be able to update the NFT from the program.
     let seeds = b"nft_authority";
     let bump = ctx.bumps.nft_authority;
@@ -133,7 +133,7 @@ let space = ExtensionType::try_calculate_account_len::<Mint>(
     msg!("Init metadata {0}", ctx.accounts.nft_authority.to_account_info().key);
 
     // Init the metadata account
-    let init_token_meta_data_ix = 
+    let init_token_meta_data_ix =
     &spl_token_metadata_interface::instruction::initialize(
         &spl_token_2022::id(),
         ctx.accounts.mint.key,
@@ -213,7 +213,7 @@ let space = ExtensionType::try_calculate_account_len::<Mint>(
 
 
 
-The example is based on the Solana Games Preset 
+The example is based on the Solana Games Preset
 
 ```shell
 npx create-solana-game gamName
@@ -221,28 +221,28 @@ npx create-solana-game gamName
 
 # Solana Game Preset
 
-This game is ment as a starter game for on chain games. 
+This game is ment as a starter game for on chain games.
 There is a js and a unity client for this game and both are talking to a solana anchor program.
 
-This game uses gum session keys for auto approval of transactions. 
-Note that neither the program nor session keys are audited. Use at your own risk. 
+This game uses gum session keys for auto approval of transactions.
+Note that neither the program nor session keys are audited. Use at your own risk.
 
 # How to run this example
 
 ## Quickstart
 
-The unity client and the js client are both connected to the same program and should work out of the box connecting to the already deployed program. 
+The unity client and the js client are both connected to the same program and should work out of the box connecting to the already deployed program.
 
-### Unity 
+### Unity
 Open the Unity project with Unity Version 2021.3.32.f1 (or similar), open the GameScene or LoginScene and hit play.
 Use the editor login button in the bottom left. If you cant get devnet sol you can copy your address from the console and use the faucet here: https://faucet.solana.com/ to request some sol.
 
 ### Js Client
-To start the js client open the project in visual studio code and run: 
+To start the js client open the project in visual studio code and run:
 
 ```bash
-cd app 
-yarn install 
+cd app
+yarn install
 yarn dev
 ```
 
@@ -256,7 +256,7 @@ sh -c "$(curl -sSfL https://release.solana.com/v1.16.18/install)"
 
 Anchor program
 1. Install the [Anchor CLI](https://project-serum.github.io/anchor/getting-started/installation.html)
-2. `cd program` to end the program directory
+2. `cd anchor` to end the program directory
 3. Run `anchor build` to build the program
 4. Run `anchor deploy` to deploy the program
 5. Copy the program id from the terminal into the lib.rs, anchor.toml and within the unity project in the AnchorService and if you use js in the anchor.ts file
@@ -270,15 +270,15 @@ Next js client
 4. Run `yarn dev` to start the client
 5. After doing changes to the anchor program make sure to copy over the types from the program into the client so you can use them. You can find the js types in the target/idl folder.
 
-Unity client 
+Unity client
 1. Install [Unity](https://unity.com/)
 2. Open the MainScene
 3. Hit play
 4. After doing changes to the anchor program make sure to regenerate the C# client: https://solanacookbook.com/gaming/porting-anchor-to-unity.html#generating-the-client
-Its done like this (after you have build the program): 
+Its done like this (after you have build the program):
 
 ```bash
-cd program 
+cd program
 dotnet tool install Solana.Unity.Anchor.Tool <- run once
 dotnet anchorgen -i target/idl/extension_nft.json -o target/idl/ExtensionNft.cs
 ```
@@ -288,15 +288,15 @@ dotnet anchorgen -i target/idl/extension_nft.json -o target/idl/ExtensionNft.cs
 then copy the c# code into the unity project.
 
 ## Connect to local host (optional)
-To connect to local host from Unity add these links on the wallet holder game object: 
+To connect to local host from Unity add these links on the wallet holder game object:
 http://localhost:8899
 ws://localhost:8900
 
 ## Video walkthroughs
-Here are two videos explaining the energy logic and session keys: 
+Here are two videos explaining the energy logic and session keys:
 Session keys:
 https://www.youtube.com/watch?v=oKvWZoybv7Y&t=17s&ab_channel=Solana
-Energy system: 
+Energy system:
 https://www.youtube.com/watch?v=YYQtRCXJBgs&t=4s&ab_channel=Solana
 
 # Project structure
@@ -325,23 +325,23 @@ The instructions then call the state to get the data and update it.
 
 ```
 
-The project uses session keys (maintained by Magic Block) for auto approving transactions using an expiring token. 
+The project uses session keys (maintained by Magic Block) for auto approving transactions using an expiring token.
 
-# Energy System  
+# Energy System
 
 Many casual games in traditional gaming use energy systems. This is how you can build it on chain.
 
-If you have no prior knowledge in solana and rust programming it is recommended to start with the Solana cookbook [Hello world example]([https://unity.com/](https://solanacookbook.com/gaming/hello-world.html#getting-started-with-your-first-solana-game)).  
+If you have no prior knowledge in solana and rust programming it is recommended to start with the Solana cookbook [Hello world example]([https://unity.com/](https://solanacookbook.com/gaming/hello-world.html#getting-started-with-your-first-solana-game)).
 
-## Anchor program 
+## Anchor program
 
-Here we will build a program which refills energy over time which the player can then use to perform actions in the game. 
-In our example it will be a lumber jack which chops trees. Every tree will reward on wood and cost one energy. 
+Here we will build a program which refills energy over time which the player can then use to perform actions in the game.
+In our example it will be a lumber jack which chops trees. Every tree will reward on wood and cost one energy.
 
 ### Creating the player account
 
-First the player needs to create an account which saves the state of our player. Notice the last_login time which will save the current unix time stamp of the player he interacts with the program. 
-Like this we will be able to calculate how much energy the player has at a certain point in time.  
+First the player needs to create an account which saves the state of our player. Notice the last_login time which will save the current unix time stamp of the player he interacts with the program.
+Like this we will be able to calculate how much energy the player has at a certain point in time.
 We also have a value for wood which will store the wood the lumber jack chucks in the game.
 
 ```rust
@@ -381,7 +381,7 @@ pub struct InitPlayer<'info> {
 
 ### Chopping trees
 
-Then whenever the player calls the chop_tree instruction we will check if the player has enough energy and reward him with one wood. 
+Then whenever the player calls the chop_tree instruction we will check if the player has enough energy and reward him with one wood.
 
 ```rust
     #[error_code]
@@ -407,9 +407,9 @@ Then whenever the player calls the chop_tree instruction we will check if the pl
 
 ### Calculating the energy
 
-The interesting part happens in the update_energy function. We check how much time has passed and calculate the energy that the player will have at the given time. 
-The same thing we will also do in the client. So we basically lazily update the energy instead of polling it all the time. 
-The is a common technic in game development. 
+The interesting part happens in the update_energy function. We check how much time has passed and calculate the energy that the player will have at the given time.
+The same thing we will also do in the client. So we basically lazily update the energy instead of polling it all the time.
+The is a common technic in game development.
 
 ```rust
 
@@ -442,7 +442,7 @@ pub fn update_energy(&mut self) -> Result<()> {
 }
 ```
 
-## Js client 
+## Js client
 
 ### Subscribe to account updates
 
@@ -452,7 +452,7 @@ It is possible to subscribe to account updates via a websocket. This get updates
 useEffect(() => {
     if (!publicKey) {return;}
     const [pda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("player", "utf8"), 
+        [Buffer.from("player", "utf8"),
         publicKey.toBuffer()],
         new PublicKey(ExtensionNft_PROGRAM_ID)
       );
@@ -463,7 +463,7 @@ useEffect(() => {
     } catch (e) {
       window.alert("No player data found, please init!");
     }
- 
+
     connection.onAccountChange(pda, (account) => {
         setGameState(program.coder.accounts.decode("playerData", account.data));
     });
@@ -504,25 +504,25 @@ const interval = setInterval(async () => {
 
 {(gameState && <div className="flex flex-col items-center">
     {("Wood: " + gameState.wood + " Energy: " + gameState.energy + " Next energy in: " + nextEnergyIn )}
-</div>)} 
+</div>)}
 
   ```
 
-## Unity client 
+## Unity client
 
-In the Unity client everything interesting happens in the AnchorService. 
+In the Unity client everything interesting happens in the AnchorService.
 To generate the client code you can follow the instructions here: https://solanacookbook.com/gaming/porting-anchor-to-unity.html#generating-the-client
 
 ```bash
-cd program 
+cd program
 dotnet tool install Solana.Unity.Anchor.Tool <- run once
 dotnet anchorgen -i target/idl/extension_nft.json -o target/idl/ExtensionNft.cs
 ```
 
 ### Session keys
 
-Session keys is an optional component. What it does is creating a local key pair which is toped up with some sol which can be used to autoapprove transactions. The session token is only allowed on certain functions of the program and has an expiry of 23 hours. Then the player will get the sol back and can create a new session.  
+Session keys is an optional component. What it does is creating a local key pair which is toped up with some sol which can be used to autoapprove transactions. The session token is only allowed on certain functions of the program and has an expiry of 23 hours. Then the player will get the sol back and can create a new session.
 
 With this you can now build any energy based game and even if someone builds a bot for the game the most he can do is play optimally, which maybe even easier to achieve when playing normally depending on the logic of your game.
 
-This game becomes even better when combined with the Token example from Solana Cookbook and you actually drop some spl token to the players. 
+This game becomes even better when combined with the Token example from Solana Cookbook and you actually drop some spl token to the players.
