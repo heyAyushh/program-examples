@@ -9,16 +9,9 @@
 ./tokens/spl-token-minter/native
 ./tokens/create-token/native
 
-./tokens/token-2022/mint-close-authority/native
-./tokens/token-2022/non-transferable/native
-./tokens/token-2022/default-account-state/native
-./tokens/token-2022/transfer-fee/native
-./tokens/token-2022/multiple-extensions/native
-
 ./oracles/pyth/anchor
 
 ./compression/cutils/anchor
 ./compression/cnft-vault/anchor
 
-./tokens/token-2022/transfer-hook/anchor
 ./tokens/token-2022/nft-meta-data-pointer/anchor-example/anchor
