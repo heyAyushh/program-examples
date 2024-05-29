@@ -2679,7 +2679,7 @@ dependencies = [
  "borsh-derive 0.9.3",
  "solana-program",
  "spl-associated-token-account",
- "spl-token-2022 2.0.1",
+ "spl-token-2022 0.7.0",
 ]
 
 [[package]]
