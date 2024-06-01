@@ -1,23 +1,30 @@
-./basics/realloc/native
-./basics/cross-program-invocation/native
+# build and test error
+basics/realloc/native
+basics/cross-program-invocation/native
 
-./tools/shank-and-solita/native
+# uses generated client from shank, can't rewrite to solana-bankrun
+tools/shank-and-solita/native
 
-./tokens/pda-mint-authority/native
-./tokens/nft-minter/native
-./tokens/transfer-tokens/native
-./tokens/spl-token-minter/native
-./tokens/create-token/native
+# can't test on localnet
+tokens/pda-mint-authority/native
+tokens/nft-minter/native
+tokens/transfer-tokens/native
+tokens/spl-token-minter/native
+tokens/create-token/native
 
-./tokens/token-2022/mint-close-authority/native
-./tokens/token-2022/non-transferable/native
-./tokens/token-2022/default-account-state/native
-./tokens/token-2022/transfer-fee/native
-./tokens/token-2022/multiple-extensions/native
+# not building with stable solana
+tokens/token-2022/mint-close-authority/native
+tokens/token-2022/non-transferable/native
+tokens/token-2022/default-account-state/native
+tokens/token-2022/transfer-fee/native
+tokens/token-2022/multiple-extensions/native
 
-./oracles/pyth/anchor
+# not building
+oracles/pyth/anchor
 
-./compression/cutils/anchor
-./compression/cnft-vault/anchor
-
-./tokens/token-2022/nft-meta-data-pointer/anchor-example/anchor
+# not building
+compression/cutils/anchor
+compression/cnft-vault/anchor
+# builds but need to test on localhost
+compression/cnft-burn/anchor
+tokens/token-2022/nft-meta-data-pointer/anchor-example/anchor

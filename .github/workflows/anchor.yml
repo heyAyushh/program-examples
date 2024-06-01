@@ -50,8 +50,19 @@ jobs:
         if: ${{ steps.changes.outputs.anchor == 'true' }}
         run: |
             changed_files=(${{ steps.changes.outputs.anchor_files }})
-            # find anchor projects and remove ignored projects
-            ProjectDirs=($(for file in "${changed_files[@]}"; do dirname "${file}" | grep anchor | sed 's#/anchor/.*#/anchor#g'; done | grep -v -f <(grep . .github/.ghaignore | grep -v '^$') | sort -u))
+
+            # Read ignored projects from .github/.ghaignore, ignoring empty lines and comments
+            ignored_projects=($(grep . .github/.ghaignore | grep -v '^$'))
+
+            # Find anchor projects and remove ignored projects
+            ProjectDirs=($(for file in "${changed_files[@]}"; do
+              anchor_path=$(dirname "${file}" | grep anchor | sed 's#/anchor/.*#/anchor#g')
+              if [[ ! " ${ignored_projects[*]} " =~ " ${anchor_path} " ]]; then
+                echo "$anchor_path"
+              fi
+            done | sort -u))
+
+            # Build anchor projects
             echo "Projects to Build:"
             printf "%s\n" "${ProjectDirs[@]}"
             for projectDir in "${ProjectDirs[@]}"; do
@@ -82,9 +93,13 @@ jobs:
       - name: Build All Anchor programs
         if: github.event_name != 'pull_request'
         run: |
-          declare -a ProjectDirs=($(find . -type d -name "anchor"| grep -v -f <(grep . .github/.ghaignore | grep -v '^$')))
+          # Find all anchor projects and remove ignored projects
+          declare -a ProjectDirs=($(find . -type d -name 'anchor' | sed 's|^\./||'| grep -v -f <(grep . .github/.ghaignore | grep -v '^$')))
+
           echo "Projects to Build:"
           printf "%s\n" "${ProjectDirs[@]}"
+
+          # Build anchor projects
           for projectDir in "${ProjectDirs[@]}"; do
             echo "
             ********
