@@ -73,6 +73,8 @@ jobs:
       - name: Process Anchor projects
         id: process
         run: |
+          set -x
+
           # Determine which projects to process based on the event type
           if [[ "${{ github.event_name }}" == "pull_request" && "${{ needs.changes.outputs.anchor_action }}" != "true" ]]; then
             changed_files="${{ needs.changes.outputs.anchor_files }}"
@@ -109,16 +111,29 @@ jobs:
             echo "::group::Processing $project"
             cd "$project" || continue
 
+            echo "Building $project"
             if ! anchor build; then
               echo "::error file=${project}::Build failed for $project"
               failed=true
               failed_projects+=("$project (build)")
-            elif ! pnpm install --frozen-lockfile && anchor test; then
-              echo "::error file=${project}::Tests failed for $project"
-              failed=true
-              failed_projects+=("$project (test)")
             else
-              echo "Build and tests succeeded for $project"
+              echo "Build succeeded for $project"
+
+              echo "Installing dependencies for $project"
+              if ! pnpm install --frozen-lockfile; then
+                echo "::error file=${project}::Dependency installation failed for $project"
+                failed=true
+                failed_projects+=("$project (install)")
+              else
+                echo "Running tests for $project"
+                if ! anchor test; then
+                  echo "::error file=${project}::Tests failed for $project"
+                  failed=true
+                  failed_projects+=("$project (test)")
+                else
+                  echo "Tests succeeded for $project"
+                fi
+              fi
             fi
 
             rm -rf target node_modules
