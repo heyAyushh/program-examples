@@ -81,7 +81,7 @@ jobs:
 
           batch_projects() {
             local batch_size=5
-            jq -R -s 'split("\n")[:-1] | _nwise('"$batch_size"') | map(select(length > 0))' | jq -c '.'
+            jq -R -s 'split("\n")[:-1] | _nwise('"$batch_size"') | map(select(length > 0))'
           }
 
           ignore_regex=$(create_ignore_regex)
@@ -102,7 +102,7 @@ jobs:
             echo "project_batches=[]" >> $GITHUB_OUTPUT
           else
             batches=$(echo "$filtered_projects" | batch_projects)
-            echo "project_batches=$batches" >> $GITHUB_OUTPUT
+            echo "project_batches=$(echo "$batches" | jq -c -R '.')" >> $GITHUB_OUTPUT
             echo "::notice::Projects to process: $filtered_projects"
           fi
         shell: bash
