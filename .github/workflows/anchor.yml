@@ -19,27 +19,52 @@ env:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
     outputs:
+      anchor: ${{ steps.filter.outputs.anchor }}
+      ghaignore: ${{ steps.filter.outputs.ghaignore }}
+      anchor_yml: ${{ steps.filter.outputs.anchor_yml }}
+      anchor_files: ${{ steps.filter.outputs.anchor_files }}
+      should_run: ${{ steps.check.outputs.should_run }}
       project_batches: ${{ steps.process.outputs.project_batches }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
         with:
-          fetch-depth: 0
+          list-files: shell
+          filters: |
+            anchor:
+              - added|modified: '**/anchor/**'
+            ghaignore:
+              - '.github/.ghaignore'
+            anchor_yml:
+              - '.github/workflows/anchor.yml'
+
+      - name: Check if build should run
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "push" ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            if [[ "${{ steps.filter.outputs.anchor }}" == "true" || \
+                  "${{ steps.filter.outputs.ghaignore }}" == "true" || \
+                  "${{ steps.filter.outputs.anchor_yml }}" == "true" ]]; then
+              echo "should_run=true" >> $GITHUB_OUTPUT
+            else
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Process Anchor projects
         id: process
+        if: steps.check.outputs.should_run == 'true'
         run: |
           set -e
-
-          get_changed_projects() {
-            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} || echo "Git diff failed"
-            elif [[ "${{ github.event_name }}" == "push" ]]; then
-              git diff --name-only ${{ github.event.before }} ${{ github.event.after }} || echo "Git diff failed"
-            else
-              echo "Not a pull request or push event"
-            fi
-          }
 
           create_ignore_regex() {
             grep -v '^#' .github/.ghaignore 2>/dev/null | sed 's/^/^/' | sed 's/$/\//' | tr '\n' '|' | sed 's/|$//' || echo ""
@@ -60,13 +85,14 @@ jobs:
           }
 
           ignore_regex=$(create_ignore_regex)
-          changed_files=$(get_changed_projects)
 
-          if [[ $changed_files == *"Git diff failed"* || $changed_files == *"Not a pull request or push event"* ]]; then
-            echo "::warning::Failed to get changed files or not a PR/push event. Processing all projects."
-            projects=$(find . -type d -name "anchor")
-          else
+          if [[ "${{ github.event_name }}" == "pull_request" && \
+                "${{ steps.filter.outputs.ghaignore }}" != "true" && \
+                "${{ steps.filter.outputs.anchor_yml }}" != "true" ]]; then
+            changed_files="${{ steps.filter.outputs.anchor_files }}"
             projects=$(echo "$changed_files" | grep '/anchor/' | sed 's/\/anchor\/.*$/\/anchor/' | sort -u)
+          else
+            projects=$(find . -type d -name "anchor")
           fi
 
           filtered_projects=$(echo "$projects" | filter_projects "$ignore_regex")
@@ -83,7 +109,7 @@ jobs:
 
   build-and-test:
     needs: changes
-    if: ${{ fromJson(needs.changes.outputs.project_batches)[0] }}
+    if: needs.changes.outputs.should_run == 'true' && fromJson(needs.changes.outputs.project_batches)[0]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -117,7 +143,7 @@ jobs:
             cd "$project" || continue
 
             echo "Building $project"
-            if ! anchor build --verbose; then
+            if ! anchor build; then
               echo "::error file=${project}::Build failed for $project"
               exit 1
             fi
@@ -129,7 +155,7 @@ jobs:
             fi
 
             echo "Running tests for $project"
-            if ! anchor test --verbose; then
+            if ! anchor test; then
               echo "::error file=${project}::Tests failed for $project"
               exit 1
             fi
@@ -162,6 +188,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ needs.build-and-test.result }}" == "success" ]]; then
             echo "✅ All projects built and tested successfully." >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.build-and-test.result }}" == "skipped" ]]; then
+            echo "ℹ️ Build and test job was skipped." >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Some projects failed to build or test. Check the build logs for details." >> $GITHUB_STEP_SUMMARY
           fi
