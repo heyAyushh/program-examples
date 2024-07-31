@@ -143,13 +143,16 @@ jobs:
 
           if [ "$failed" = true ]; then
             echo "::error::Failed projects: ${failed_projects[*]}"
+            printf '%s\n' "${failed_projects[@]}"
             exit 1
           fi
 
           # Generate job summary
-          echo "## Batch ${{ matrix.batch }} Results (Solana ${{ matrix.solana-version }})" >> $GITHUB_STEP_SUMMARY
-          echo "Processed projects:" >> $GITHUB_STEP_SUMMARY
-          printf '- %s\n' "${batch_projects[@]}" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Batch ${{ matrix.batch }} Results (Solana ${{ matrix.solana-version }})"
+            echo "Processed projects:"
+            printf '%s\n' "${batch_projects[@]}"
+          } >> $GITHUB_STEP_SUMMARY
         shell: bash
 
   summary:
