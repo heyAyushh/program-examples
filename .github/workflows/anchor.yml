@@ -97,12 +97,21 @@ jobs:
 
           filtered_projects=$(echo "$projects" | filter_projects "$ignore_regex")
 
+          echo "Debug: Filtered projects:"
+          echo "$filtered_projects"
+
           if [[ -z "$filtered_projects" ]]; then
             echo "::notice::No projects to process after filtering."
             echo "project_batches=[]" >> $GITHUB_OUTPUT
           else
+            echo "Debug: Creating batches"
             batches=$(echo "$filtered_projects" | batch_projects)
-            echo "project_batches=$batches" >> $GITHUB_OUTPUT
+            echo "Debug: Raw batches output:"
+            echo "$batches"
+            echo "Debug: Escaped batches output:"
+            escaped_batches=$(echo "$batches" | jq -R -s '.')
+            echo "$escaped_batches"
+            echo "project_batches=$escaped_batches" >> $GITHUB_OUTPUT
             echo "::notice::Projects to process: $filtered_projects"
           fi
         shell: bash
