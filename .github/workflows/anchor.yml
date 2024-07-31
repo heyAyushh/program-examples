@@ -37,19 +37,48 @@ jobs:
               - added|modified: '**/workflows/anchor.yml'
               - added|modified: '.github/.ghaignore'
 
+  prepare:
+      needs: changes
+      if: |
+        needs.changes.outputs.anchor == 'true' ||
+        needs.changes.outputs.anchor_action == 'true' ||
+        github.event_name == 'schedule' ||
+        github.event_name == 'push'
+      runs-on: ubuntu-latest
+      outputs:
+        matrix: ${{ steps.set-matrix.outputs.matrix }}
+      steps:
+        - uses: actions/checkout@v4
+        - id: set-matrix
+          run: |
+            if [[ "${{ github.event_name }}" == "pull_request" && "${{ needs.changes.outputs.anchor_action }}" != "true" ]]; then
+              changed_files="${{ needs.changes.outputs.anchor_files }}"
+              search_pattern=$(echo "$changed_files" | tr ' ' '|' | sed 's/|$//')
+            else
+              search_pattern=".*"
+            fi
+
+            ignore_file=".github/.ghaignore"
+            projects=($(find . -type d -name "anchor" | sed 's|^\./||' | grep -E "$search_pattern" | grep -v -f <(grep . "$ignore_file" 2>/dev/null | grep -v '^$' || echo '^$')))
+
+            if [ ${#projects[@]} -eq 0 ]; then
+              echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+            else
+              matrix_json="["
+              for project in "${projects[@]}"; do
+                matrix_json+="{\"project\":\"$project\"},"
+              done
+              matrix_json="${matrix_json%,}]"
+              echo "matrix={\"include\":$matrix_json}" >> $GITHUB_OUTPUT
+            fi
+
   build-and-test:
-    needs: changes
-    if: |
-      needs.changes.outputs.anchor == 'true' ||
-      needs.changes.outputs.anchor_action == 'true' ||
-      github.event_name == 'schedule' ||
-      github.event_name == 'push'
+    needs: prepare
+    if: ${{ fromJson(needs.prepare.outputs.matrix).include[0] }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        solana-version: [1.18.17, stable]
-        batch: [0, 1, 2, 3] # Adjust the number of batches as needed
+      matrix: ${{fromJson(needs.prepare.outputs.matrix)}}
     steps:
       - uses: actions/checkout@v4
 
@@ -57,7 +86,7 @@ jobs:
         uses: heyAyushh/setup-anchor@v4.0
         with:
           anchor-version: ${{ env.ANCHOR_VERSION }}
-          solana-cli-version: ${{ matrix.solana-version }}
+          solana-cli-version: ${{ env.SOLANA_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
@@ -70,88 +99,42 @@ jobs:
           rustc -V
           anchor -V
 
-      - name: Process Anchor projects
-        id: process
+      - name: Process Anchor project
         run: |
           set -x
+          project="${{ matrix.project }}"
+          echo "Processing project: $project"
 
-          # Determine which projects to process based on the event type
-          if [[ "${{ github.event_name }}" == "pull_request" && "${{ needs.changes.outputs.anchor_action }}" != "true" ]]; then
-            changed_files="${{ needs.changes.outputs.anchor_files }}"
-            search_pattern=$(echo "$changed_files" | tr ' ' '|' | sed 's/|$//')
-          else
-            search_pattern=".*"
-          fi
+          cd "$project" || exit 1
 
-          # Find Anchor projects, excluding those in .ghaignore
-          ignore_file=".github/.ghaignore"
-          projects=($(find . -type d -name "anchor" | sed 's|^\./||' | grep -E "$search_pattern" | grep -v -f <(grep . "$ignore_file" 2>/dev/null | grep -v '^$' || echo '^$')))
-
-          # Batch projects
-          total_projects=${#projects[@]}
-          batch_size=$(( (total_projects + 3) / 4 ))
-          start_index=$(( ${{ matrix.batch }} * batch_size ))
-          end_index=$(( start_index + batch_size - 1 ))
-
-          batch_projects=("${projects[@]:start_index:batch_size}")
-
-          if [ ${#batch_projects[@]} -eq 0 ]; then
-            echo "No projects to process in this batch."
-            exit 0
-          fi
-
-          echo "Processing projects:"
-          printf '%s\n' "${batch_projects[@]}"
-
-          # Process (build and test) Anchor projects
-          failed=false
-          failed_projects=()
-
-          for project in "${batch_projects[@]}"; do
-            echo "::group::Processing $project"
-            cd "$project" || continue
-
-            echo "Building $project"
-            if ! anchor build; then
-              echo "::error file=${project}::Build failed for $project"
-              failed=true
-              failed_projects+=("$project (build)")
-            else
-              echo "Build succeeded for $project"
-
-              echo "Installing dependencies for $project"
-              if ! pnpm install --frozen-lockfile; then
-                echo "::error file=${project}::Dependency installation failed for $project"
-                failed=true
-                failed_projects+=("$project (install)")
-              else
-                echo "Running tests for $project"
-                if ! anchor test; then
-                  echo "::error file=${project}::Tests failed for $project"
-                  failed=true
-                  failed_projects+=("$project (test)")
-                else
-                  echo "Tests succeeded for $project"
-                fi
-              fi
-            fi
-
-            rm -rf target node_modules
-            cd - > /dev/null || exit
-            echo "::endgroup::"
-          done
-
-          if [ "$failed" = true ]; then
-            echo "::error::Failed projects: ${failed_projects[*]}"
-            printf '%s\n' "${failed_projects[@]}"
+          echo "Building $project"
+          if ! anchor build --verbose; then
+            echo "::error file=${project}::Build failed for $project"
             exit 1
           fi
 
-          # Generate job summary
+          echo "Installing dependencies for $project"
+          if ! pnpm install --frozen-lockfile; then
+            echo "::error file=${project}::Dependency installation failed for $project"
+            exit 1
+          fi
+
+          echo "Running tests for $project"
+          if ! anchor test --verbose; then
+            echo "::error file=${project}::Tests failed for $project"
+            exit 1
+          fi
+
+          echo "Build and tests succeeded for $project"
+        shell: bash
+
+      - name: Generate job summary
+        if: always()
+        run: |
           {
-            echo "## Batch ${{ matrix.batch }} Results (Solana ${{ matrix.solana-version }})"
-            echo "Processed projects:"
-            printf '%s\n' "${batch_projects[@]}"
+            echo "## Project Results (Solana ${{ env.SOLANA_VERSION }})"
+            echo "Processed project: ${{ matrix.project }}"
+            echo "Status: ${{ job.status }}"
           } >> $GITHUB_STEP_SUMMARY
         shell: bash
 
