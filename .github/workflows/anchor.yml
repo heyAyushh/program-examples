@@ -13,7 +13,6 @@ on:
 
 env:
   ANCHOR_VERSION: "0.30.1"
-  SOLANA_VERSION: "1.18.17"
   NODE_VERSION: "20.x"
 
 jobs:
@@ -49,6 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        solana-version: [1.18.17, stable]
         batch: [0, 1, 2, 3] # Adjust the number of batches as needed
     steps:
       - uses: actions/checkout@v4
@@ -57,7 +57,7 @@ jobs:
         uses: heyAyushh/setup-anchor@v4.0
         with:
           anchor-version: ${{ env.ANCHOR_VERSION }}
-          solana-cli-version: ${{ env.SOLANA_VERSION }}
+          solana-cli-version: ${{ matrix.solana-version }}
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
@@ -72,12 +72,14 @@ jobs:
 
       - name: Define shell functions
         run: |
+          # Find Anchor projects, excluding those in .ghaignore
           find_projects() {
             local search_pattern="$1"
             local ignore_file=".github/.ghaignore"
             find . -type d -name "anchor" | sed 's|^\./||' | grep -E "$search_pattern" | grep -v -f <(grep . "$ignore_file" 2>/dev/null | grep -v '^$' || echo '^$')
           }
 
+          # Process (build and test) Anchor projects
           process_projects() {
             local projects=("$@")
             local failed=false
@@ -87,22 +89,16 @@ jobs:
               echo "::group::Processing $project"
               cd "$project" || continue
 
-              echo "Building $project"
               if ! anchor build; then
                 echo "::error file=${project}::Build failed for $project"
                 failed=true
                 failed_projects+=("$project (build)")
+              elif ! pnpm install --frozen-lockfile && anchor test; then
+                echo "::error file=${project}::Tests failed for $project"
+                failed=true
+                failed_projects+=("$project (test)")
               else
-                echo "Build succeeded for $project"
-
-                echo "Testing $project"
-                if ! pnpm install --frozen-lockfile && anchor test; then
-                  echo "::error file=${project}::Tests failed for $project"
-                  failed=true
-                  failed_projects+=("$project (test)")
-                else
-                  echo "Tests succeeded for $project"
-                fi
+                echo "Build and tests succeeded for $project"
               fi
 
               rm -rf target node_modules
@@ -116,11 +112,16 @@ jobs:
             fi
             return 0
           }
+
+          # Export functions to make them available in subsequent steps
+          export -f find_projects
+          export -f process_projects
         shell: bash
 
       - name: Process Anchor projects
         id: process
         run: |
+          # Determine which projects to process based on the event type
           if [[ "${{ github.event_name }}" == "pull_request" && "${{ needs.changes.outputs.anchor_action }}" != "true" ]]; then
             changed_files="${{ needs.changes.outputs.anchor_files }}"
             search_pattern=$(echo "$changed_files" | tr ' ' '|' | sed 's/|$//')
@@ -128,6 +129,7 @@ jobs:
             search_pattern=".*"
           fi
 
+          # Find and batch projects
           projects=($(find_projects "$search_pattern"))
           total_projects=${#projects[@]}
           batch_size=$(( (total_projects + 3) / 4 ))
@@ -149,7 +151,7 @@ jobs:
           fi
 
           # Generate job summary
-          echo "## Batch ${{ matrix.batch }} Results" >> $GITHUB_STEP_SUMMARY
+          echo "## Batch ${{ matrix.batch }} Results (Solana ${{ matrix.solana-version }})" >> $GITHUB_STEP_SUMMARY
           echo "Processed projects:" >> $GITHUB_STEP_SUMMARY
           printf '- %s\n' "${batch_projects[@]}" >> $GITHUB_STEP_SUMMARY
         shell: bash
