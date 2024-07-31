@@ -70,54 +70,6 @@ jobs:
           rustc -V
           anchor -V
 
-      - name: Define shell functions
-        run: |
-          # Find Anchor projects, excluding those in .ghaignore
-          find_projects() {
-            local search_pattern="$1"
-            local ignore_file=".github/.ghaignore"
-            find . -type d -name "anchor" | sed 's|^\./||' | grep -E "$search_pattern" | grep -v -f <(grep . "$ignore_file" 2>/dev/null | grep -v '^$' || echo '^$')
-          }
-
-          # Process (build and test) Anchor projects
-          process_projects() {
-            local projects=("$@")
-            local failed=false
-            local failed_projects=()
-
-            for project in "${projects[@]}"; do
-              echo "::group::Processing $project"
-              cd "$project" || continue
-
-              if ! anchor build; then
-                echo "::error file=${project}::Build failed for $project"
-                failed=true
-                failed_projects+=("$project (build)")
-              elif ! pnpm install --frozen-lockfile && anchor test; then
-                echo "::error file=${project}::Tests failed for $project"
-                failed=true
-                failed_projects+=("$project (test)")
-              else
-                echo "Build and tests succeeded for $project"
-              fi
-
-              rm -rf target node_modules
-              cd - > /dev/null || exit
-              echo "::endgroup::"
-            done
-
-            if [ "$failed" = true ]; then
-              echo "::error::Failed projects: ${failed_projects[*]}"
-              return 1
-            fi
-            return 0
-          }
-
-          # Export functions to make them available in subsequent steps
-          export -f find_projects
-          export -f process_projects
-        shell: bash
-
       - name: Process Anchor projects
         id: process
         run: |
@@ -129,8 +81,11 @@ jobs:
             search_pattern=".*"
           fi
 
-          # Find and batch projects
-          projects=($(find_projects "$search_pattern"))
+          # Find Anchor projects, excluding those in .ghaignore
+          ignore_file=".github/.ghaignore"
+          projects=($(find . -type d -name "anchor" | sed 's|^\./||' | grep -E "$search_pattern" | grep -v -f <(grep . "$ignore_file" 2>/dev/null | grep -v '^$' || echo '^$')))
+
+          # Batch projects
           total_projects=${#projects[@]}
           batch_size=$(( (total_projects + 3) / 4 ))
           start_index=$(( ${{ matrix.batch }} * batch_size ))
@@ -146,7 +101,33 @@ jobs:
           echo "Processing projects:"
           printf '%s\n' "${batch_projects[@]}"
 
-          if ! process_projects "${batch_projects[@]}"; then
+          # Process (build and test) Anchor projects
+          failed=false
+          failed_projects=()
+
+          for project in "${batch_projects[@]}"; do
+            echo "::group::Processing $project"
+            cd "$project" || continue
+
+            if ! anchor build; then
+              echo "::error file=${project}::Build failed for $project"
+              failed=true
+              failed_projects+=("$project (build)")
+            elif ! pnpm install --frozen-lockfile && anchor test; then
+              echo "::error file=${project}::Tests failed for $project"
+              failed=true
+              failed_projects+=("$project (test)")
+            else
+              echo "Build and tests succeeded for $project"
+            fi
+
+            rm -rf target node_modules
+            cd - > /dev/null || exit
+            echo "::endgroup::"
+          done
+
+          if [ "$failed" = true ]; then
+            echo "::error::Failed projects: ${failed_projects[*]}"
             exit 1
           fi
 
