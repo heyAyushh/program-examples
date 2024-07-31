@@ -13,72 +13,82 @@ on:
 
 env:
   ANCHOR_VERSION: "0.30.1"
+  SOLANA_VERSION: "1.18.17"
   NODE_VERSION: "20.x"
 
 jobs:
   changes:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
     outputs:
-      anchor: ${{ steps.filter.outputs.anchor }}
-      anchor_action: ${{ steps.filter.outputs.anchor_action }}
-      anchor_files: ${{ steps.filter.outputs.anchor_files }}
+      project_batches: ${{ steps.process.outputs.project_batches }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
         with:
-          list-files: shell
-          filters: |
-            anchor:
-              - added|modified: '**/anchor/**'
-            anchor_action:
-              - added|modified: '**/workflows/anchor.yml'
-              - added|modified: '.github/.ghaignore'
+          fetch-depth: 0
 
-  prepare:
-      needs: changes
-      if: |
-        needs.changes.outputs.anchor == 'true' ||
-        needs.changes.outputs.anchor_action == 'true' ||
-        github.event_name == 'schedule' ||
-        github.event_name == 'push'
-      runs-on: ubuntu-latest
-      outputs:
-        matrix: ${{ steps.set-matrix.outputs.matrix }}
-      steps:
-        - uses: actions/checkout@v4
-        - id: set-matrix
-          run: |
-            if [[ "${{ github.event_name }}" == "pull_request" && "${{ needs.changes.outputs.anchor_action }}" != "true" ]]; then
-              changed_files="${{ needs.changes.outputs.anchor_files }}"
-              search_pattern=$(echo "$changed_files" | tr ' ' '|' | sed 's/|$//')
+      - name: Process Anchor projects
+        id: process
+        run: |
+          set -e
+
+          get_changed_projects() {
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} || echo "Git diff failed"
+            elif [[ "${{ github.event_name }}" == "push" ]]; then
+              git diff --name-only ${{ github.event.before }} ${{ github.event.after }} || echo "Git diff failed"
             else
-              search_pattern=".*"
+              echo "Not a pull request or push event"
             fi
+          }
 
-            ignore_file=".github/.ghaignore"
-            projects=($(find . -type d -name "anchor" | sed 's|^\./||' | grep -E "$search_pattern" | grep -v -f <(grep . "$ignore_file" 2>/dev/null | grep -v '^$' || echo '^$')))
+          create_ignore_regex() {
+            grep -v '^#' .github/.ghaignore 2>/dev/null | sed 's/^/^/' | sed 's/$/\//' | tr '\n' '|' | sed 's/|$//' || echo ""
+          }
 
-            if [ ${#projects[@]} -eq 0 ]; then
-              echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+          filter_projects() {
+            local ignore_regex="$1"
+            if [[ -n "$ignore_regex" ]]; then
+              grep -vE "$ignore_regex" || true
             else
-              matrix_json="["
-              for project in "${projects[@]}"; do
-                matrix_json+="{\"project\":\"$project\"},"
-              done
-              matrix_json="${matrix_json%,}]"
-              echo "matrix={\"include\":$matrix_json}" >> $GITHUB_OUTPUT
+              cat
             fi
+          }
+
+          batch_projects() {
+            local batch_size=5
+            jq -R -s 'split("\n")[:-1] | _nwise('"$batch_size"') | map(select(length > 0))' | jq -c '.'
+          }
+
+          ignore_regex=$(create_ignore_regex)
+          changed_files=$(get_changed_projects)
+
+          if [[ $changed_files == *"Git diff failed"* || $changed_files == *"Not a pull request or push event"* ]]; then
+            echo "::warning::Failed to get changed files or not a PR/push event. Processing all projects."
+            projects=$(find . -type d -name "anchor")
+          else
+            projects=$(echo "$changed_files" | grep '/anchor/' | sed 's/\/anchor\/.*$/\/anchor/' | sort -u)
+          fi
+
+          filtered_projects=$(echo "$projects" | filter_projects "$ignore_regex")
+
+          if [[ -z "$filtered_projects" ]]; then
+            echo "::notice::No projects to process after filtering."
+            echo "project_batches=[]" >> $GITHUB_OUTPUT
+          else
+            batches=$(echo "$filtered_projects" | batch_projects)
+            echo "project_batches=$batches" >> $GITHUB_OUTPUT
+            echo "::notice::Projects to process: $filtered_projects"
+          fi
+        shell: bash
 
   build-and-test:
-    needs: prepare
-    if: ${{ fromJson(needs.prepare.outputs.matrix).include[0] }}
+    needs: changes
+    if: ${{ fromJson(needs.changes.outputs.project_batches)[0] }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{fromJson(needs.prepare.outputs.matrix)}}
+      matrix:
+        batch: ${{ fromJson(needs.changes.outputs.project_batches) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -99,44 +109,47 @@ jobs:
           rustc -V
           anchor -V
 
-      - name: Process Anchor project
+      - name: Process Anchor projects
         run: |
           set -x
-          project="${{ matrix.project }}"
-          echo "Processing project: $project"
+          for project in ${{ toJson(matrix.batch) }}; do
+            echo "Processing project: $project"
+            cd "$project" || continue
 
-          cd "$project" || exit 1
+            echo "Building $project"
+            if ! anchor build --verbose; then
+              echo "::error file=${project}::Build failed for $project"
+              exit 1
+            fi
 
-          echo "Building $project"
-          if ! anchor build --verbose; then
-            echo "::error file=${project}::Build failed for $project"
-            exit 1
-          fi
+            echo "Installing dependencies for $project"
+            if ! pnpm install --frozen-lockfile; then
+              echo "::error file=${project}::Dependency installation failed for $project"
+              exit 1
+            fi
 
-          echo "Installing dependencies for $project"
-          if ! pnpm install --frozen-lockfile; then
-            echo "::error file=${project}::Dependency installation failed for $project"
-            exit 1
-          fi
+            echo "Running tests for $project"
+            if ! anchor test --verbose; then
+              echo "::error file=${project}::Tests failed for $project"
+              exit 1
+            fi
 
-          echo "Running tests for $project"
-          if ! anchor test --verbose; then
-            echo "::error file=${project}::Tests failed for $project"
-            exit 1
-          fi
-
-          echo "Build and tests succeeded for $project"
+            echo "Build and tests succeeded for $project"
+            cd - > /dev/null || exit
+          done
         shell: bash
 
       - name: Generate job summary
         if: always()
         run: |
           {
-            echo "## Project Results (Solana ${{ env.SOLANA_VERSION }})"
-            echo "Processed project: ${{ matrix.project }}"
+            echo "## Batch Results (Solana ${{ env.SOLANA_VERSION }})"
+            echo "Processed projects:"
+            for project in ${{ toJson(matrix.batch) }}; do
+              echo "- $project"
+            done
             echo "Status: ${{ job.status }}"
           } >> $GITHUB_STEP_SUMMARY
-        shell: bash
 
   summary:
     needs: build-and-test
