@@ -81,7 +81,7 @@ jobs:
 
           batch_projects() {
             local batch_size=5
-            jq -R -s 'split("\n") | map(select(length > 0)) | _nwise('"$batch_size"')'
+            jq -R -s 'split("\n") | map(select(length > 0)) | _nwise('"$batch_size"') | tostring'
           }
 
           ignore_regex=$(create_ignore_regex)
@@ -104,14 +104,8 @@ jobs:
             echo "::notice::No projects to process after filtering."
             echo "project_batches=[]" >> $GITHUB_OUTPUT
           else
-            echo "Debug: Creating batches"
             batches=$(echo "$filtered_projects" | batch_projects)
-            echo "Debug: Raw batches output:"
-            echo "$batches"
-            echo "Debug: Escaped batches output:"
-            escaped_batches=$(echo "$batches" | jq -R -s '.')
-            echo "$escaped_batches"
-            echo "project_batches=$escaped_batches" >> $GITHUB_OUTPUT
+            echo "project_batches=$batches" >> $GITHUB_OUTPUT
             echo "::notice::Projects to process: $filtered_projects"
           fi
         shell: bash
