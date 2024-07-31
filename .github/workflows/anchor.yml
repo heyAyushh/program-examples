@@ -1,4 +1,4 @@
-name: Anchor Build and Test
+name: Anchor
 
 on:
   schedule:
@@ -24,103 +24,45 @@ jobs:
     outputs:
       anchor: ${{ steps.filter.outputs.anchor }}
       ghaignore: ${{ steps.filter.outputs.ghaignore }}
-      anchor_yml: ${{ steps.filter.outputs.anchor_yml }}
-      anchor_files: ${{ steps.filter.outputs.anchor_files }}
-      should_run: ${{ steps.check.outputs.should_run }}
-      project_batches: ${{ steps.process.outputs.project_batches }}
+      anchor_action: ${{ steps.filter.outputs.anchor_action }}
+      anchor_projects: ${{ steps.get-projects.outputs.projects }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: dorny/paths-filter@v3
         id: filter
         with:
-          list-files: shell
           filters: |
             anchor:
-              - added|modified: '**/anchor/**'
+              - '**/anchor/**'
             ghaignore:
               - '.github/.ghaignore'
-            anchor_yml:
+            anchor_action:
               - '.github/workflows/anchor.yml'
 
-      - name: Check if build should run
-        id: check
+      - name: Get changed anchor projects
+        id: get-projects
+        if: steps.filter.outputs.anchor == 'true'
         run: |
-          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "push" ]]; then
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            if [[ "${{ steps.filter.outputs.anchor }}" == "true" || \
-                  "${{ steps.filter.outputs.ghaignore }}" == "true" || \
-                  "${{ steps.filter.outputs.anchor_yml }}" == "true" ]]; then
-              echo "should_run=true" >> $GITHUB_OUTPUT
-            else
-              echo "should_run=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "should_run=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Process Anchor projects
-        id: process
-        if: steps.check.outputs.should_run == 'true'
-        run: |
-          set -e
-
-          create_ignore_regex() {
-            grep -v '^#' .github/.ghaignore 2>/dev/null | sed 's/^/^/' | sed 's/$/\//' | tr '\n' '|' | sed 's/|$//' || echo ""
-          }
-
-          filter_projects() {
-            local ignore_regex="$1"
-            if [[ -n "$ignore_regex" ]]; then
-              grep -vE "$ignore_regex" || true
-            else
-              cat
-            fi
-          }
-
-          batch_projects() {
-            local batch_size=5
-            jq -R -s 'split("\n") | map(select(length > 0)) | _nwise('"$batch_size"') | tostring'
-          }
-
-          ignore_regex=$(create_ignore_regex)
-
-          if [[ "${{ github.event_name }}" == "pull_request" && \
-                "${{ steps.filter.outputs.ghaignore }}" != "true" && \
-                "${{ steps.filter.outputs.anchor_yml }}" != "true" ]]; then
-            changed_files="${{ steps.filter.outputs.anchor_files }}"
-            projects=$(echo "$changed_files" | grep '/anchor/' | sed 's/\/anchor\/.*$/\/anchor/' | sort -u)
-          else
-            projects=$(find . -type d -name "anchor")
-          fi
-
-          filtered_projects=$(echo "$projects" | filter_projects "$ignore_regex")
-
-          echo "Debug: Filtered projects:"
-          echo "$filtered_projects"
-
-          if [[ -z "$filtered_projects" ]]; then
-            echo "::notice::No projects to process after filtering."
-            echo "project_batches=[]" >> $GITHUB_OUTPUT
-          else
-            batches=$(echo "$filtered_projects" | batch_projects)
-            echo "project_batches=$batches" >> $GITHUB_OUTPUT
-            echo "::notice::Projects to process: $filtered_projects"
-          fi
-        shell: bash
+          ignored_projects=$(grep -v '^#' .github/.ghaignore | tr '\n' '|' | sed 's/|$//')
+          projects=$(find . -type d -name 'anchor' | sed 's|^\./||' | grep -vE "$ignored_projects" | jq -R -s -c 'split("\n")[:-1]')
+          echo "projects=$projects" >> $GITHUB_OUTPUT
 
   build-and-test:
     needs: changes
-    if: needs.changes.outputs.should_run == 'true' && fromJson(needs.changes.outputs.project_batches)[0]
+    if: |
+      needs.changes.outputs.anchor == 'true' ||
+      needs.changes.outputs.ghaignore == 'true' ||
+      needs.changes.outputs.anchor_action == 'true' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
-        batch: ${{ fromJson(needs.changes.outputs.project_batches) }}
+        project: ${{ fromJson(needs.changes.outputs.anchor_projects) }}
+      fail-fast: false
+      max-parallel: 4
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Anchor
         uses: heyAyushh/setup-anchor@v4.0
         with:
@@ -128,73 +70,61 @@ jobs:
           solana-cli-version: ${{ env.SOLANA_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install pnpm
-        run: npm i -g pnpm
-
-      - name: Display versions
+      - name: Display versions and Install pnpm
         run: |
           solana -V
           solana-keygen new --no-bip39-passphrase
           rustc -V
           anchor -V
+          npm i -g pnpm
 
-      - name: Process Anchor projects
+      - name: Build and Test Anchor Project
+        id: build-and-test
         run: |
-          set -x
-          for project in ${{ toJson(matrix.batch) }}; do
-            echo "Processing project: $project"
-            cd "$project" || continue
-
-            echo "Building $project"
-            if ! anchor build; then
-              echo "::error file=${project}::Build failed for $project"
-              exit 1
+          function build_project() {
+            if anchor build; then
+              echo "Build succeeded for $1"
+            else
+              echo "::error file=$1::Build failed for $1"
+              return 1
             fi
+          }
 
-            echo "Installing dependencies for $project"
-            if ! pnpm install --frozen-lockfile; then
-              echo "::error file=${project}::Dependency installation failed for $project"
-              exit 1
+          function test_project() {
+            if pnpm install --frozen-lockfile && anchor test; then
+              echo "Tests succeeded for $1"
+            else
+              echo "::error file=$1::Tests failed for $1"
+              return 1
             fi
+          }
 
-            echo "Running tests for $project"
-            if ! anchor test; then
-              echo "::error file=${project}::Tests failed for $project"
-              exit 1
-            fi
+          cd ${{ matrix.project }}
 
-            echo "Build and tests succeeded for $project"
-            cd - > /dev/null || exit
-          done
-        shell: bash
-
-
-      - name: Generate job summary
-        if: always()
-        run: |
-          {
-            echo "## Batch Results (Solana ${{ env.SOLANA_VERSION }})"
-            echo "Processed projects:"
-            for project in ${{ toJson(matrix.batch) }}; do
-              echo "- $project"
-            done
-            echo "Status: ${{ job.status }}"
-          } >> $GITHUB_STEP_SUMMARY
+          if build_project ${{ matrix.project }} && test_project ${{ matrix.project }}; then
+            echo "Project ${{ matrix.project }} built and tested successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Project ${{ matrix.project }} failed to build or test" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
   summary:
     needs: build-and-test
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Summarize results
+      - name: Create Job Summary
         run: |
           echo "# Anchor Build and Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.build-and-test.result }}" == "success" ]]; then
-            echo "✅ All projects built and tested successfully." >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.build-and-test.result }}" == "skipped" ]]; then
-            echo "ℹ️ Build and test job was skipped." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Some projects failed to build or test. Check the build logs for details." >> $GITHUB_STEP_SUMMARY
-          fi
-        shell: bash
+          echo "| Project | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          for result in ${{ needs.build-and-test.result }}; do
+            project=$(echo $result | cut -d':' -f1)
+            status=$(echo $result | cut -d':' -f2)
+            if [ "$status" == "success" ]; then
+              echo "| $project | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| $project | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
