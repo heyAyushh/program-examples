@@ -35,8 +35,6 @@ jobs:
           filters: |
             anchor:
               - added|modified: '**/anchor/**'
-            ignore:
-              - added|modified: '.github/.ghaignore'
             workflow:
               - added|modified: '.github/workflows/anchor.yml'
       - name: Analyze Changes
@@ -49,7 +47,7 @@ jobs:
             find . -type d -name "anchor" | grep -vE "$ignore_pattern" | sort
           }
 
-          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "schedule" || "${{ steps.changes.outputs.ignore }}" == "true" || "${{ steps.changes.outputs.workflow }}" == "true" ]]; then
+          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "schedule" || "${{ steps.changes.outputs.workflow }}" == "true" ]]; then
             projects=$(get_projects)
           elif [[ "${{ steps.changes.outputs.anchor }}" == "true" ]]; then
             changed_files=(${{ steps.changes.outputs.anchor_files }})
@@ -150,11 +148,10 @@ jobs:
           end_index=$(( start_index + PROJECTS_PER_JOB ))
           end_index=$(( end_index > TOTAL_PROJECTS ? TOTAL_PROJECTS : end_index ))
 
-          echo "::group::Projects to build and test in this job"
+          echo "Projects to build and test in this job"
           for i in $(seq $start_index $(( end_index - 1 ))); do
             echo "${all_projects[$i]}"
           done
-          echo "::endgroup::"
 
           failed=false
           for i in $(seq $start_index $(( end_index - 1 ))); do
