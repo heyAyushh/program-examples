@@ -105,7 +105,7 @@ jobs:
           anchor-version: 0.30.1
           solana-cli-version: 1.18.17
           node-version: 20.x
-          use-avm: true
+          use-avm: false
       - name: Display Versions and Install pnpm
         run: |
           solana -V

@@ -21,6 +21,14 @@ tokens/transfer-tokens/anchor
 # not building
 oracles/pyth/anchor
 
+# avm broke hence can't build
+# can't use anchor.toml [toolchain] with stable rust
+# update these programs to use latest anchor version to fix
+tokens/token-2022/group/anchor
+tokens/token-2022/immutable-owner/anchor
+tokens/token-2022/interest-bearing/anchor
+tokens/token-2022/memo-transfer/anchor
+
 # not building
 compression/cutils/anchor
 compression/cnft-vault/anchor
