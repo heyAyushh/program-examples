@@ -24,6 +24,7 @@ jobs:
       should_build_and_test_all: ${{ steps.analyze.outputs.build_and_test_all }}
       changed_projects: ${{ steps.analyze.outputs.changed_projects }}
       total_projects: ${{ steps.analyze.outputs.total_projects }}
+      matrix_indices: ${{ steps.matrix.outputs.matrix_indices }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -72,6 +73,18 @@ jobs:
             echo "total_projects=0" >> $GITHUB_OUTPUT
             echo "changed_projects=[]" >> $GITHUB_OUTPUT
           fi
+      - name: Generate matrix indices
+        id: matrix
+        run: |
+          total_projects=${{ steps.analyze.outputs.total_projects }}
+          projects_per_job=${{ env.PROJECTS_PER_JOB }}
+          max_jobs=${{ env.MAX_JOBS }}
+
+          num_jobs=$(( (total_projects + projects_per_job - 1) / projects_per_job ))
+          num_jobs=$(( num_jobs > max_jobs ? max_jobs : num_jobs ))
+
+          indices=$(seq 0 $(( num_jobs - 1 )) | jq -R -s -c 'split("\n")[:-1]')
+          echo "matrix_indices=$indices" >> $GITHUB_OUTPUT
 
   build-and-test:
     needs: changes
@@ -83,18 +96,6 @@ jobs:
         index: ${{ fromJson(needs.changes.outputs.matrix_indices) }}
     steps:
       - uses: actions/checkout@v4
-      - name: Generate matrix indices
-        id: matrix
-        run: |
-          total_projects=${{ needs.changes.outputs.total_projects }}
-          projects_per_job=${{ env.PROJECTS_PER_JOB }}
-          max_jobs=${{ env.MAX_JOBS }}
-
-          num_jobs=$(( (total_projects + projects_per_job - 1) / projects_per_job ))
-          num_jobs=$(( num_jobs > max_jobs ? max_jobs : num_jobs ))
-
-          indices=$(seq 0 $(( num_jobs - 1 )) | jq -R -s -c 'split("\n")[:-1]')
-          echo "matrix_indices=$indices" >> $GITHUB_OUTPUT
       - uses: heyAyushh/setup-anchor@v4.0
         with:
           anchor-version: 0.30.1
