@@ -12,9 +12,8 @@ on:
       - main
 
 env:
-  ANCHOR_VERSION: "0.30.1"
-  SOLANA_VERSION: "1.18.17"
-  NODE_VERSION: "20.x"
+  MAX_JOBS: 4
+  MIN_PROJECTS_PER_JOB: 2
 
 jobs:
   changes:
@@ -22,55 +21,102 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      anchor: ${{ steps.filter.outputs.anchor }}
-      ghaignore: ${{ steps.filter.outputs.ghaignore }}
-      anchor_action: ${{ steps.filter.outputs.anchor_action }}
-      anchor_projects: ${{ steps.get-projects.outputs.projects }}
+      anchor: ${{ steps.changes.outputs.anchor }}
+      anchor_action: ${{ steps.changes.outputs.anchor_action }}
+      ghaignore: ${{ steps.changes.outputs.ghaignore }}
+      anchor_files: ${{ steps.changes.outputs.anchor_files }}
+      project_dirs: ${{ steps.project-dirs.outputs.project_dirs }}
+      project_count: ${{ steps.project-dirs.outputs.project_count }}
+
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
-        id: filter
+        if: github.event_name == 'pull_request'
+        id: changes
         with:
+          list-files: shell
           filters: |
             anchor:
-              - '**/anchor/**'
-            ghaignore:
-              - '.github/.ghaignore'
+              - added|modified: '**/anchor/**'
             anchor_action:
-              - '.github/workflows/anchor.yml'
+              - added|modified: '**/workflows/anchor.yml'
+            ghaignore:
+              - added|modified: '**/.github/.ghaignore'
 
-      - name: Get changed anchor projects
-        id: get-projects
-        if: steps.filter.outputs.anchor == 'true'
+      - name: Get Project Directories
+        id: project-dirs
+        if: github.event_name != 'pull_request' || steps.changes.outputs.anchor == 'true' || steps.changes.outputs.anchor_action == 'true' || steps.changes.outputs.ghaignore == 'true'
         run: |
-          ignored_projects=$(grep -v '^#' .github/.ghaignore | tr '\n' '|' | sed 's/|$//')
-          projects=$(find . -type d -name 'anchor' | sed 's|^\./||' | grep -vE "$ignored_projects" | jq -R -s -c 'split("\n")[:-1]')
-          echo "projects=$projects" >> $GITHUB_OUTPUT
+          ignored_projects_regex=$(grep -v '^$' .github/.ghaignore | paste -sd '|' -)
+          project_dirs=$(find . -type d -name "anchor" | grep -v -E "$ignored_projects_regex" | sed 's|^\./||')
+          project_count=$(echo "$project_dirs" | wc -l)
+          echo "project_dirs<<EOF" >> $GITHUB_OUTPUT
+          echo "$project_dirs" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "project_count=$project_count" >> $GITHUB_OUTPUT
+
+      - name: Log Project Directories
+        if: github.event_name != 'pull_request' || steps.changes.outputs.anchor == 'true' || steps.changes.outputs.anchor_action == 'true' || steps.changes.outputs.ghaignore == 'true'
+        run: |
+          echo "Projects to build and test:"
+          echo "${{ steps.project-dirs.outputs.project_dirs }}"
 
   build-and-test:
     needs: changes
-    if: |
-      needs.changes.outputs.anchor == 'true' ||
-      needs.changes.outputs.ghaignore == 'true' ||
-      needs.changes.outputs.anchor_action == 'true' ||
-      github.event_name == 'schedule' ||
-      github.event_name == 'push'
+    if: (github.event_name == 'pull_request' && (needs.changes.outputs.anchor == 'true' || needs.changes.outputs.anchor_action == 'true' || needs.changes.outputs.ghaignore == 'true')) || (github.event_name != 'pull_request' && github.event_name != 'pull_request_target')
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        project: ${{ fromJson(needs.changes.outputs.anchor_projects) }}
       fail-fast: false
-      max-parallel: 4
+      matrix:
+        include: ${{ fromJson(steps.generate-matrix.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Generate Job Matrix
+        id: generate-matrix
+        env:
+          MAX_JOBS: ${{ env.MAX_JOBS }}
+          MIN_PROJECTS_PER_JOB: ${{ env.MIN_PROJECTS_PER_JOB }}
+          PROJECT_COUNT: ${{ needs.changes.outputs.project_count }}
+          PROJECT_DIRS: ${{ needs.changes.outputs.project_dirs }}
+        run: |
+          max_jobs=$MAX_JOBS
+          min_projects_per_job=$MIN_PROJECTS_PER_JOB
+          project_count=$PROJECT_COUNT
+
+          if [[ $project_count -le $((max_jobs * min_projects_per_job)) ]]; then
+            job_count=1
+            max_jobs=$project_count
+          else
+            job_count=$((project_count / max_jobs))
+            if [[ $((project_count % max_jobs)) -ne 0 ]]; then
+              job_count=$((job_count + 1))
+            fi
+          fi
+
+          project_dirs_array=($PROJECT_DIRS)
+          matrix="["
+          for ((i=0; i<job_count; i++)); do
+            start=$((i * max_jobs))
+            end=$((start + max_jobs))
+            if [[ $end -gt $project_count ]]; then
+              end=$project_count
+            fi
+            projects="${project_dirs_array[@]:start:end}"
+            matrix+="{\"projects\":\"$projects\"},"
+          done
+          matrix="${matrix%?}]"
+
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+
       - name: Setup Anchor
         uses: heyAyushh/setup-anchor@v4.0
         with:
-          anchor-version: ${{ env.ANCHOR_VERSION }}
-          solana-cli-version: ${{ env.SOLANA_VERSION }}
-          node-version: ${{ env.NODE_VERSION }}
+          anchor-version: 0.30.1
+          solana-cli-version: stable
+          node-version: 20.x
 
-      - name: Display versions and Install pnpm
+      - name: Display Versions and Install pnpm
         run: |
           solana -V
           solana-keygen new --no-bip39-passphrase
@@ -78,33 +124,28 @@ jobs:
           anchor -V
           npm i -g pnpm
 
-      - name: Build and Test Anchor Project
-        id: build-and-test
+      - name: Build and Test Anchor Programs
+        id: build-test
         run: |
-          function build_project() {
-            if anchor build; then
-              echo "Build succeeded for $1"
+          IFS=' ' read -r -a project_dirs <<< "${{ matrix.projects }}"
+          for project_dir in "${project_dirs[@]}"; do
+            echo "Building and testing $project_dir"
+            cd "$project_dir"
+            pnpm install --frozen-lockfile
+            if anchor build && anchor test; then
+              echo "Build and tests succeeded for $project_dir"
+              rm -rf target node_modules
             else
-              echo "::error file=$1::Build failed for $1"
-              return 1
+              echo "::error title=Build or Test Failed::Build or tests failed for $project_dir"
+              failed_projects+=("$project_dir")
             fi
-          }
+            cd - > /dev/null
+          done
 
-          function test_project() {
-            if pnpm install --frozen-lockfile && anchor test; then
-              echo "Tests succeeded for $1"
-            else
-              echo "::error file=$1::Tests failed for $1"
-              return 1
-            fi
-          }
-
-          cd ${{ matrix.project }}
-
-          if build_project ${{ matrix.project }} && test_project ${{ matrix.project }}; then
-            echo "Project ${{ matrix.project }} built and tested successfully" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Project ${{ matrix.project }} failed to build or test" >> $GITHUB_STEP_SUMMARY
+          if [[ ${#failed_projects[@]} -gt 0 ]]; then
+            echo "failed_projects<<EOF" >> $GITHUB_OUTPUT
+            printf "%s\n" "${failed_projects[@]}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
             exit 1
           fi
 
@@ -112,19 +153,20 @@ jobs:
     needs: build-and-test
     if: always()
     runs-on: ubuntu-latest
+
     steps:
-      - name: Create Job Summary
+      - name: Generate Summary
         run: |
-          echo "# Anchor Build and Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Project | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
-          for result in ${{ needs.build-and-test.result }}; do
-            project=$(echo $result | cut -d':' -f1)
-            status=$(echo $result | cut -d':' -f2)
-            if [ "$status" == "success" ]; then
-              echo "| $project | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "| $project | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
+          if [[ ${{ needs.build-and-test.result }} == "success" ]]; then
+            echo "## All projects built and tested successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Failed Projects" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The following projects failed to build or test:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            failed_projects=$(echo '${{ join(needs.build-and-test.outputs.failed_projects, ' ') }}' | sed 's/#/%23/g')
+            IFS=' ' read -r -a failed_projects_array <<< "$failed_projects"
+            for project in "${failed_projects_array[@]}"; do
+              echo "- $project" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
