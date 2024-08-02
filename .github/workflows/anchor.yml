@@ -40,7 +40,7 @@ jobs:
       - name: Analyze Changes
         id: analyze
         run: |
-          ignore_pattern=$(grep . .github/.ghaignore | grep -v '^$' | tr '\n' '|' | sed 's/|$//')
+          ignore_pattern=$(grep -v '^#' .github/.ghaignore | grep -v '^$' | tr '\n' '|' | sed 's/|$//')
           echo "Ignore pattern: $ignore_pattern"
 
           function get_projects() {
@@ -179,15 +179,31 @@ jobs:
         run: |
           echo "## Anchor Workflow Summary" >> $GITHUB_STEP_SUMMARY
           echo "- Total projects: ${{ needs.changes.outputs.total_projects }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Projects processed:" >> $GITHUB_STEP_SUMMARY
+
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Projects processed </summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo '${{ needs.changes.outputs.changed_projects }}' | jq -r '.[]' | while read project; do
-            echo "  - $project" >> $GITHUB_STEP_SUMMARY
+            echo "- $project" >> $GITHUB_STEP_SUMMARY
           done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
 
           if [[ "${{ needs.build-and-test.result }}" == "failure" ]]; then
             echo "## :x: Build or tests failed" >> $GITHUB_STEP_SUMMARY
-            echo "### Failed projects:" >> $GITHUB_STEP_SUMMARY
-            cat $GITHUB_WORKSPACE/failed_projects.txt >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No failed projects file found." >> $GITHUB_STEP_SUMMARY
+            echo "<details>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>Failed projects (click to expand)</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [[ -f $GITHUB_WORKSPACE/failed_projects.txt ]]; then
+              while IFS=: read -r project failure_reason; do
+                echo "- **$project**" >> $GITHUB_STEP_SUMMARY
+                echo "  - Failure reason: $failure_reason" >> $GITHUB_STEP_SUMMARY
+              done < $GITHUB_WORKSPACE/failed_projects.txt
+            else
+              echo "No failed projects file found. This might indicate an unexpected error in the workflow." >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
           elif [[ "${{ needs.build-and-test.result }}" == "success" ]]; then
             echo "## :white_check_mark: All builds and tests passed" >> $GITHUB_STEP_SUMMARY
           else
