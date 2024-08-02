@@ -84,7 +84,7 @@ jobs:
 
           if [ "$total_projects" -lt "$min_projects_for_matrix" ]; then
             matrix=$(jq -n --argjson projects '${{ steps.analyze.outputs.changed_projects }}' \
-              '{include: [{index: 0, projects: $projects}]}')
+              '{include: [{name: "All Projects", index: 0, projects: $projects}]}')
           else
             projects_per_job=$(( (total_projects + max_jobs - 1) / max_jobs ))
             projects_per_job=$(( projects_per_job > min_projects_per_job ? projects_per_job : min_projects_per_job ))
@@ -93,6 +93,7 @@ jobs:
             matrix=$(jq -n --argjson total $total_projects --argjson per_job $projects_per_job '
               {include: [range(0; $total; $per_job) |
                 {
+                  name: "Projects " + (. + 1 | tostring) + " to " + (([. + $per_job, $total] | min) | tostring),
                   index: .,
                   start: .,
                   end: (. + $per_job - 1 | if . >= $total then $total - 1 else . end)
@@ -111,7 +112,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{fromJson(needs.changes.outputs.matrix)}}
+      matrix: ${{fromJson(fromJson(needs.changes.outputs.matrix))}}
+    name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
       - uses: heyAyushh/setup-anchor@v4.0
