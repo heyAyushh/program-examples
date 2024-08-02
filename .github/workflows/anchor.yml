@@ -62,8 +62,9 @@ jobs:
           fi
 
           if [[ -n "$projects" ]]; then
-            echo "Projects to build and test:"
+            echo "::group::Projects to build and test"
             echo "$projects"
+            echo "::endgroup::"
             total_projects=$(echo "$projects" | wc -l)
             echo "Total projects: $total_projects"
             echo "total_projects=$total_projects" >> $GITHUB_OUTPUT
@@ -142,18 +143,29 @@ jobs:
           start_index=$(( ${{ matrix.index }} * ${{ env.PROJECTS_PER_JOB }} ))
           end_index=$(( start_index + ${{ env.PROJECTS_PER_JOB }} ))
 
+          echo "::group::Projects to build and test in this job"
+          for i in $(seq $start_index $(( end_index - 1 ))); do
+            if [[ $i -lt ${#all_projects[@]} ]]; then
+              echo "${all_projects[$i]}"
+            fi
+          done
+          echo "::endgroup::"
+
           failed=false
           for i in $(seq $start_index $(( end_index - 1 ))); do
             if [[ $i -lt ${#all_projects[@]} ]]; then
+              echo "::group::Building and testing ${all_projects[$i]}"
               if ! build_and_test "${all_projects[$i]}"; then
                 failed=true
               fi
+              echo "::endgroup::"
             fi
           done
 
           if [[ "$failed" == "true" ]]; then
-            echo "Some projects failed. Check failed_projects.txt for details."
+            echo "::group::Failed projects"
             cat $GITHUB_WORKSPACE/failed_projects.txt
+            echo "::endgroup::"
             exit 1
           fi
 
