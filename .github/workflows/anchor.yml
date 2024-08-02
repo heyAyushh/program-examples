@@ -12,8 +12,9 @@ on:
       - main
 
 env:
-  MAX_JOBS: 4
-  PROJECTS_PER_JOB: 4
+  MAX_JOBS: 64
+  MIN_PROJECTS_PER_JOB: 4
+  MIN_PROJECTS_FOR_MATRIX: 4
 
 jobs:
   changes:
@@ -24,7 +25,7 @@ jobs:
       should_build_and_test_all: ${{ steps.analyze.outputs.build_and_test_all }}
       changed_projects: ${{ steps.analyze.outputs.changed_projects }}
       total_projects: ${{ steps.analyze.outputs.total_projects }}
-      matrix_indices: ${{ steps.matrix.outputs.matrix_indices }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -74,18 +75,32 @@ jobs:
             echo "total_projects=0" >> $GITHUB_OUTPUT
             echo "changed_projects=[]" >> $GITHUB_OUTPUT
           fi
-      - name: Generate matrix indices
+      - name: Generate matrix
         id: matrix
         run: |
           total_projects=${{ steps.analyze.outputs.total_projects }}
-          projects_per_job=${{ env.PROJECTS_PER_JOB }}
           max_jobs=${{ env.MAX_JOBS }}
+          min_projects_per_job=${{ env.MIN_PROJECTS_PER_JOB }}
+          min_projects_for_matrix=${{ env.MIN_PROJECTS_FOR_MATRIX }}
 
-          num_jobs=$(( (total_projects + projects_per_job - 1) / projects_per_job ))
-          num_jobs=$(( num_jobs > max_jobs ? max_jobs : num_jobs ))
+          if [ "$total_projects" -lt "$min_projects_for_matrix" ]; then
+            echo "matrix={\"include\":[{\"index\":0,\"projects\":$(echo '${{ steps.analyze.outputs.changed_projects }}' | jq -c '.')}]}" >> $GITHUB_OUTPUT
+          else
+            projects_per_job=$(( (total_projects + max_jobs - 1) / max_jobs ))
+            projects_per_job=$(( projects_per_job > min_projects_per_job ? projects_per_job : min_projects_per_job ))
+            num_jobs=$(( (total_projects + projects_per_job - 1) / projects_per_job ))
 
-          indices=$(seq 0 $(( num_jobs - 1 )) | jq -R -s -c 'split("\n")[:-1]')
-          echo "matrix_indices=$indices" >> $GITHUB_OUTPUT
+            matrix_items=$(jq -n --argjson total $total_projects --argjson per_job $projects_per_job '
+              range(0; $total; $per_job) |
+              {
+                "index": .,
+                "start": .,
+                "end": (. + $per_job - 1 | if . >= $total then $total - 1 else . end)
+              }
+            ' | jq -s '{"include": .}')
+
+            echo "matrix=$matrix_items" >> $GITHUB_OUTPUT
+          fi
 
   build-and-test:
     needs: changes
@@ -93,8 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        index: ${{ fromJson(needs.changes.outputs.matrix_indices) }}
+      matrix: ${{fromJson(needs.changes.outputs.matrix)}}
     steps:
       - uses: actions/checkout@v4
       - uses: heyAyushh/setup-anchor@v4.0
@@ -140,26 +154,26 @@ jobs:
           }
 
           readarray -t all_projects < <(echo '${{ needs.changes.outputs.changed_projects }}' | jq -r '.[]?')
-          start_index=$(( ${{ matrix.index }} * ${{ env.PROJECTS_PER_JOB }} ))
-          end_index=$(( start_index + ${{ env.PROJECTS_PER_JOB }} ))
+
+          if [ "${{ matrix.index }}" -eq 0 ] && [ "${{ needs.changes.outputs.total_projects }}" -lt "${{ env.MIN_PROJECTS_FOR_MATRIX }}" ]; then
+            projects_to_build=(${all_projects[@]})
+          else
+            start_index=${{ matrix.start }}
+            end_index=${{ matrix.end }}
+            projects_to_build=(${all_projects[@]:$start_index:$(( end_index - start_index + 1 ))})
+          fi
 
           echo "::group::Projects to build and test in this job"
-          for i in $(seq $start_index $(( end_index - 1 ))); do
-            if [[ $i -lt ${#all_projects[@]} ]]; then
-              echo "${all_projects[$i]}"
-            fi
-          done
+          printf '%s\n' "${projects_to_build[@]}"
           echo "::endgroup::"
 
           failed=false
-          for i in $(seq $start_index $(( end_index - 1 ))); do
-            if [[ $i -lt ${#all_projects[@]} ]]; then
-              echo "::group::Building and testing ${all_projects[$i]}"
-              if ! build_and_test "${all_projects[$i]}"; then
-                failed=true
-              fi
-              echo "::endgroup::"
+          for project in "${projects_to_build[@]}"; do
+            echo "::group::Building and testing $project"
+            if ! build_and_test "$project"; then
+              failed=true
             fi
+            echo "::endgroup::"
           done
 
           if [[ "$failed" == "true" ]]; then
