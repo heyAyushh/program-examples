@@ -22,7 +22,6 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      should_build_and_test_all: ${{ steps.analyze.outputs.build_and_test_all }}
       changed_projects: ${{ steps.analyze.outputs.changed_projects }}
       total_projects: ${{ steps.analyze.outputs.total_projects }}
       matrix: ${{ steps.matrix.outputs.matrix }}
@@ -51,20 +50,18 @@ jobs:
           }
 
           if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "schedule" || "${{ steps.changes.outputs.ignore }}" == "true" || "${{ steps.changes.outputs.workflow }}" == "true" ]]; then
-            echo "build_and_test_all=true" >> $GITHUB_OUTPUT
             projects=$(get_projects)
           elif [[ "${{ steps.changes.outputs.anchor }}" == "true" ]]; then
-            echo "build_and_test_all=false" >> $GITHUB_OUTPUT
             changed_files=(${{ steps.changes.outputs.anchor_files }})
             projects=$(for file in "${changed_files[@]}"; do dirname "${file}" | grep anchor | sed 's#/anchor/.*#/anchor#g'; done | grep -vE "$ignore_pattern" | sort -u)
           else
-            echo "build_and_test_all=false" >> $GITHUB_OUTPUT
             projects=""
           fi
 
           if [[ -n "$projects" ]]; then
-            echo "Projects to build and test"
+            echo "::group::Projects to build and test"
             echo "$projects"
+            echo "::endgroup::"
             total_projects=$(echo "$projects" | wc -l)
             echo "Total projects: $total_projects"
             echo "total_projects=$total_projects" >> $GITHUB_OUTPUT
@@ -83,28 +80,15 @@ jobs:
           min_projects_for_matrix=${{ env.MIN_PROJECTS_FOR_MATRIX }}
 
           if [ "$total_projects" -lt "$min_projects_for_matrix" ]; then
-            matrix=$(jq -n --argjson projects '${{ steps.analyze.outputs.changed_projects }}' \
-              '{include: [{name: "All Projects", index: 0, projects: $projects}]}')
+            echo "matrix=[0]" >> $GITHUB_OUTPUT
           else
             projects_per_job=$(( (total_projects + max_jobs - 1) / max_jobs ))
             projects_per_job=$(( projects_per_job > min_projects_per_job ? projects_per_job : min_projects_per_job ))
             num_jobs=$(( (total_projects + projects_per_job - 1) / projects_per_job ))
 
-            matrix=$(jq -n --argjson total $total_projects --argjson per_job $projects_per_job '
-              {include: [range(0; $total; $per_job) |
-                {
-                  name: "Projects \(. + 1) to \(if . + $per_job > $total then $total else . + $per_job end)",
-                  index: .,
-                  start: .,
-                  end: (. + $per_job - 1 | if . >= $total then $total - 1 else . end)
-                }
-              ]}
-            ')
+            indices=$(seq 0 $(( num_jobs - 1 )))
+            echo "matrix=[$(echo $indices | tr ' ' ',')]" >> $GITHUB_OUTPUT
           fi
-
-          # Escape the JSON for GitHub Actions output
-          escaped_matrix=$(echo "$matrix" | jq -c -r @json)
-          echo "matrix=$escaped_matrix" >> $GITHUB_OUTPUT
 
   build-and-test:
     needs: changes
@@ -112,8 +96,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{fromJson(fromJson(needs.changes.outputs.matrix))}}
-    name: build-and-test-${{ matrix.name }}
+      matrix:
+        index: ${{ fromJson(needs.changes.outputs.matrix) }}
+    name: Build and Test Group ${{ matrix.index }}
     steps:
       - uses: actions/checkout@v4
       - uses: heyAyushh/setup-anchor@v4.0
@@ -129,6 +114,9 @@ jobs:
           anchor -V
           npm i -g pnpm
       - name: Build and Test
+        env:
+          TOTAL_PROJECTS: ${{ needs.changes.outputs.total_projects }}
+          PROJECTS_PER_JOB: ${{ env.MIN_PROJECTS_PER_JOB }}
         run: |
           function build_and_test() {
             local project=$1
@@ -159,22 +147,20 @@ jobs:
           }
 
           readarray -t all_projects < <(echo '${{ needs.changes.outputs.changed_projects }}' | jq -r '.[]?')
+          start_index=$(( ${{ matrix.index }} * PROJECTS_PER_JOB ))
+          end_index=$(( start_index + PROJECTS_PER_JOB ))
+          end_index=$(( end_index > TOTAL_PROJECTS ? TOTAL_PROJECTS : end_index ))
 
-          if [ "${{ matrix.index }}" -eq 0 ] && [ "${{ needs.changes.outputs.total_projects }}" -lt "${{ env.MIN_PROJECTS_FOR_MATRIX }}" ]; then
-            projects_to_build=(${all_projects[@]})
-          else
-            start_index=${{ matrix.start }}
-            end_index=${{ matrix.end }}
-            projects_to_build=(${all_projects[@]:$start_index:$(( end_index - start_index + 1 ))})
-          fi
-
-          echo "Projects to build and test in this job"
-          printf '%s\n' "${projects_to_build[@]}"
+          echo "::group::Projects to build and test in this job"
+          for i in $(seq $start_index $(( end_index - 1 ))); do
+            echo "${all_projects[$i]}"
+          done
+          echo "::endgroup::"
 
           failed=false
-          for project in "${projects_to_build[@]}"; do
-            echo "::group::Building and testing $project"
-            if ! build_and_test "$project"; then
+          for i in $(seq $start_index $(( end_index - 1 ))); do
+            echo "::group::Building and testing ${all_projects[$i]}"
+            if ! build_and_test "${all_projects[$i]}"; then
               failed=true
             fi
             echo "::endgroup::"
@@ -196,14 +182,11 @@ jobs:
       - name: Create job summary
         run: |
           echo "## Anchor Workflow Summary" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.changes.outputs.should_build_and_test_all }}" == "true" ]]; then
-            echo "- Built and tested all projects" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- Built and tested changed projects:" >> $GITHUB_STEP_SUMMARY
-            echo '${{ needs.changes.outputs.changed_projects }}' | jq -r '.[]' | while read project; do
-              echo "  - $project" >> $GITHUB_STEP_SUMMARY
-            done
-          fi
+          echo "- Total projects: ${{ needs.changes.outputs.total_projects }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Projects processed:" >> $GITHUB_STEP_SUMMARY
+          echo '${{ needs.changes.outputs.changed_projects }}' | jq -r '.[]' | while read project; do
+            echo "  - $project" >> $GITHUB_STEP_SUMMARY
+          done
 
           if [[ "${{ needs.build-and-test.result }}" == "failure" ]]; then
             echo "## :x: Build or tests failed" >> $GITHUB_STEP_SUMMARY
