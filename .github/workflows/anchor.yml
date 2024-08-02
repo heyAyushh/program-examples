@@ -80,9 +80,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        index: ${{ fromJson(needs.changes.outputs.should_build_and_test_all == 'true' && format('[0]') || format('[{0}]', join(',',(range(0, fromJson(needs.changes.outputs.total_projects))))))}}
+        index: ${{ fromJson(needs.changes.outputs.matrix_indices) }}
     steps:
       - uses: actions/checkout@v4
+      - name: Generate matrix indices
+        id: matrix
+        run: |
+          total_projects=${{ needs.changes.outputs.total_projects }}
+          projects_per_job=${{ env.PROJECTS_PER_JOB }}
+          max_jobs=${{ env.MAX_JOBS }}
+
+          num_jobs=$(( (total_projects + projects_per_job - 1) / projects_per_job ))
+          num_jobs=$(( num_jobs > max_jobs ? max_jobs : num_jobs ))
+
+          indices=$(seq 0 $(( num_jobs - 1 )) | jq -R -s -c 'split("\n")[:-1]')
+          echo "matrix_indices=$indices" >> $GITHUB_OUTPUT
       - uses: heyAyushh/setup-anchor@v4.0
         with:
           anchor-version: 0.30.1
@@ -98,30 +110,49 @@ jobs:
       - name: Build and Test
         run: |
           function build_and_test() {
-            echo "Building and Testing $1"
-            cd "$1"
-            if anchor build && pnpm install --frozen-lockfile && anchor test; then
-              echo "Build and tests succeeded for $1."
-              rm -rf target node_modules
-            else
-              echo "::error::Build or tests failed for $1."
-              echo "$1" >> $GITHUB_WORKSPACE/failed_projects.txt
+            local project=$1
+            echo "Building and Testing $project"
+            cd "$project"
+
+            if ! anchor build; then
+              echo "::error::anchor build failed for $project"
+              echo "$project: anchor build failed" >> $GITHUB_WORKSPACE/failed_projects.txt
+              return 1
             fi
-            cd - > /dev/null
+
+            if ! pnpm install --frozen-lockfile; then
+              echo "::error::pnpm install failed for $project"
+              echo "$project: pnpm install failed" >> $GITHUB_WORKSPACE/failed_projects.txt
+              return 1
+            fi
+
+            if ! anchor test; then
+              echo "::error::anchor test failed for $project"
+              echo "$project: anchor test failed" >> $GITHUB_WORKSPACE/failed_projects.txt
+              return 1
+            fi
+
+            echo "Build and tests succeeded for $project."
+            rm -rf target node_modules
+            return 0
           }
 
           readarray -t all_projects < <(echo '${{ needs.changes.outputs.changed_projects }}' | jq -r '.[]?')
           start_index=$(( ${{ matrix.index }} * ${{ env.PROJECTS_PER_JOB }} ))
           end_index=$(( start_index + ${{ env.PROJECTS_PER_JOB }} ))
 
+          failed=false
           for i in $(seq $start_index $(( end_index - 1 ))); do
             if [[ $i -lt ${#all_projects[@]} ]]; then
-              build_and_test "${all_projects[$i]}"
+              if ! build_and_test "${all_projects[$i]}"; then
+                failed=true
+              fi
             fi
           done
 
-          if [[ -f $GITHUB_WORKSPACE/failed_projects.txt ]]; then
+          if [[ "$failed" == "true" ]]; then
             echo "Some projects failed. Check failed_projects.txt for details."
+            cat $GITHUB_WORKSPACE/failed_projects.txt
             exit 1
           fi
 
