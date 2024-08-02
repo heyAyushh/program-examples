@@ -101,7 +101,9 @@ jobs:
             ')
           fi
 
-          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          # Escape the JSON for GitHub Actions output
+          escaped_matrix=$(echo "$matrix" | jq -c -r @json)
+          echo "matrix=$escaped_matrix" >> $GITHUB_OUTPUT
 
   build-and-test:
     needs: changes
