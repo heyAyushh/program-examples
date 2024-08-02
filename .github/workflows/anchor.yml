@@ -13,7 +13,7 @@ on:
 
 env:
   MAX_JOBS: 4
-  MIN_PROJECTS_PER_JOB: 2
+  PROJECTS_PER_JOB: 4
 
 jobs:
   changes:
@@ -21,101 +21,73 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      anchor: ${{ steps.changes.outputs.anchor }}
-      anchor_action: ${{ steps.changes.outputs.anchor_action }}
-      ghaignore: ${{ steps.changes.outputs.ghaignore }}
-      anchor_files: ${{ steps.changes.outputs.anchor_files }}
-      project_dirs: ${{ steps.project-dirs.outputs.project_dirs }}
-      project_count: ${{ steps.project-dirs.outputs.project_count }}
-
+      should_build_and_test_all: ${{ steps.analyze.outputs.build_and_test_all }}
+      changed_projects: ${{ steps.analyze.outputs.changed_projects }}
+      total_projects: ${{ steps.analyze.outputs.total_projects }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
-        if: github.event_name == 'pull_request'
         id: changes
+        if: github.event_name == 'pull_request'
         with:
           list-files: shell
           filters: |
             anchor:
               - added|modified: '**/anchor/**'
-            anchor_action:
-              - added|modified: '**/workflows/anchor.yml'
-            ghaignore:
-              - added|modified: '**/.github/.ghaignore'
-
-      - name: Get Project Directories
-        id: project-dirs
-        if: github.event_name != 'pull_request' || steps.changes.outputs.anchor == 'true' || steps.changes.outputs.anchor_action == 'true' || steps.changes.outputs.ghaignore == 'true'
+            ignore:
+              - added|modified: '.github/.ghaignore'
+            workflow:
+              - added|modified: '.github/workflows/anchor.yml'
+      - name: Analyze Changes
+        id: analyze
         run: |
-          ignored_projects_regex=$(grep -v '^$' .github/.ghaignore | paste -sd '|' -)
-          project_dirs=$(find . -type d -name "anchor" | grep -v -E "$ignored_projects_regex" | sed 's|^\./||')
-          project_count=$(echo "$project_dirs" | wc -l)
-          echo "project_dirs<<EOF" >> $GITHUB_OUTPUT
-          echo "$project_dirs" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "project_count=$project_count" >> $GITHUB_OUTPUT
+          ignore_pattern=$(grep . .github/.ghaignore | grep -v '^$' | tr '\n' '|' | sed 's/|$//')
+          echo "Ignore pattern: $ignore_pattern"
 
-      - name: Log Project Directories
-        if: github.event_name != 'pull_request' || steps.changes.outputs.anchor == 'true' || steps.changes.outputs.anchor_action == 'true' || steps.changes.outputs.ghaignore == 'true'
-        run: |
-          echo "Projects to build and test:"
-          echo "${{ steps.project-dirs.outputs.project_dirs }}"
+          function get_projects() {
+            find . -type d -name "anchor" | grep -vE "$ignore_pattern" | sort
+          }
+
+          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "schedule" || "${{ steps.changes.outputs.ignore }}" == "true" || "${{ steps.changes.outputs.workflow }}" == "true" ]]; then
+            echo "build_and_test_all=true" >> $GITHUB_OUTPUT
+            projects=$(get_projects)
+          elif [[ "${{ steps.changes.outputs.anchor }}" == "true" ]]; then
+            echo "build_and_test_all=false" >> $GITHUB_OUTPUT
+            changed_files=(${{ steps.changes.outputs.anchor_files }})
+            projects=$(for file in "${changed_files[@]}"; do dirname "${file}" | grep anchor | sed 's#/anchor/.*#/anchor#g'; done | grep -vE "$ignore_pattern" | sort -u)
+          else
+            echo "build_and_test_all=false" >> $GITHUB_OUTPUT
+            projects=""
+          fi
+
+          if [[ -n "$projects" ]]; then
+            echo "Projects to build and test:"
+            echo "$projects"
+            total_projects=$(echo "$projects" | wc -l)
+            echo "Total projects: $total_projects"
+            echo "total_projects=$total_projects" >> $GITHUB_OUTPUT
+            echo "changed_projects=$(echo "$projects" | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+          else
+            echo "No projects to build and test."
+            echo "total_projects=0" >> $GITHUB_OUTPUT
+            echo "changed_projects=[]" >> $GITHUB_OUTPUT
+          fi
 
   build-and-test:
     needs: changes
-    if: (github.event_name == 'pull_request' && (needs.changes.outputs.anchor == 'true' || needs.changes.outputs.anchor_action == 'true' || needs.changes.outputs.ghaignore == 'true')) || (github.event_name != 'pull_request' && github.event_name != 'pull_request_target')
+    if: needs.changes.outputs.total_projects != '0'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJson(steps.generate-matrix.outputs.matrix) }}
+        index: ${{ fromJson(needs.changes.outputs.should_build_and_test_all == 'true' && format('[0]') || format('[{0}]', join(',',(range(0, fromJson(needs.changes.outputs.total_projects))))))}}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Generate Job Matrix
-        id: generate-matrix
-        env:
-          MAX_JOBS: ${{ env.MAX_JOBS }}
-          MIN_PROJECTS_PER_JOB: ${{ env.MIN_PROJECTS_PER_JOB }}
-          PROJECT_COUNT: ${{ needs.changes.outputs.project_count }}
-          PROJECT_DIRS: ${{ needs.changes.outputs.project_dirs }}
-        run: |
-          max_jobs=$MAX_JOBS
-          min_projects_per_job=$MIN_PROJECTS_PER_JOB
-          project_count=$PROJECT_COUNT
-
-          if [[ $project_count -le $((max_jobs * min_projects_per_job)) ]]; then
-            job_count=1
-            max_jobs=$project_count
-          else
-            job_count=$((project_count / max_jobs))
-            if [[ $((project_count % max_jobs)) -ne 0 ]]; then
-              job_count=$((job_count + 1))
-            fi
-          fi
-
-          project_dirs_array=($PROJECT_DIRS)
-          matrix="["
-          for ((i=0; i<job_count; i++)); do
-            start=$((i * max_jobs))
-            end=$((start + max_jobs))
-            if [[ $end -gt $project_count ]]; then
-              end=$project_count
-            fi
-            projects="${project_dirs_array[@]:start:end}"
-            matrix+="{\"projects\":\"$projects\"},"
-          done
-          matrix="${matrix%?}]"
-
-          echo "matrix=$matrix" >> $GITHUB_OUTPUT
-
-      - name: Setup Anchor
-        uses: heyAyushh/setup-anchor@v4.0
+      - uses: heyAyushh/setup-anchor@v4.0
         with:
           anchor-version: 0.30.1
-          solana-cli-version: stable
+          solana-cli-version: 1.18.17
           node-version: 20.x
-
       - name: Display Versions and Install pnpm
         run: |
           solana -V
@@ -123,50 +95,60 @@ jobs:
           rustc -V
           anchor -V
           npm i -g pnpm
-
-      - name: Build and Test Anchor Programs
-        id: build-test
+      - name: Build and Test
         run: |
-          IFS=' ' read -r -a project_dirs <<< "${{ matrix.projects }}"
-          for project_dir in "${project_dirs[@]}"; do
-            echo "Building and testing $project_dir"
-            cd "$project_dir"
-            pnpm install --frozen-lockfile
-            if anchor build && anchor test; then
-              echo "Build and tests succeeded for $project_dir"
+          function build_and_test() {
+            echo "Building and Testing $1"
+            cd "$1"
+            if anchor build && pnpm install --frozen-lockfile && anchor test; then
+              echo "Build and tests succeeded for $1."
               rm -rf target node_modules
             else
-              echo "::error title=Build or Test Failed::Build or tests failed for $project_dir"
-              failed_projects+=("$project_dir")
+              echo "::error::Build or tests failed for $1."
+              echo "$1" >> $GITHUB_WORKSPACE/failed_projects.txt
             fi
             cd - > /dev/null
+          }
+
+          readarray -t all_projects < <(echo '${{ needs.changes.outputs.changed_projects }}' | jq -r '.[]?')
+          start_index=$(( ${{ matrix.index }} * ${{ env.PROJECTS_PER_JOB }} ))
+          end_index=$(( start_index + ${{ env.PROJECTS_PER_JOB }} ))
+
+          for i in $(seq $start_index $(( end_index - 1 ))); do
+            if [[ $i -lt ${#all_projects[@]} ]]; then
+              build_and_test "${all_projects[$i]}"
+            fi
           done
 
-          if [[ ${#failed_projects[@]} -gt 0 ]]; then
-            echo "failed_projects<<EOF" >> $GITHUB_OUTPUT
-            printf "%s\n" "${failed_projects[@]}" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+          if [[ -f $GITHUB_WORKSPACE/failed_projects.txt ]]; then
+            echo "Some projects failed. Check failed_projects.txt for details."
             exit 1
           fi
 
   summary:
-    needs: build-and-test
+    needs: [changes, build-and-test]
     if: always()
     runs-on: ubuntu-latest
-
     steps:
-      - name: Generate Summary
+      - uses: actions/checkout@v4
+      - name: Create job summary
         run: |
-          if [[ ${{ needs.build-and-test.result }} == "success" ]]; then
-            echo "## All projects built and tested successfully" >> $GITHUB_STEP_SUMMARY
+          echo "## Anchor Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.changes.outputs.should_build_and_test_all }}" == "true" ]]; then
+            echo "- Built and tested all projects" >> $GITHUB_STEP_SUMMARY
           else
-            echo "## Failed Projects" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The following projects failed to build or test:" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            failed_projects=$(echo '${{ join(needs.build-and-test.outputs.failed_projects, ' ') }}' | sed 's/#/%23/g')
-            IFS=' ' read -r -a failed_projects_array <<< "$failed_projects"
-            for project in "${failed_projects_array[@]}"; do
-              echo "- $project" >> $GITHUB_STEP_SUMMARY
+            echo "- Built and tested changed projects:" >> $GITHUB_STEP_SUMMARY
+            echo '${{ needs.changes.outputs.changed_projects }}' | jq -r '.[]' | while read project; do
+              echo "  - $project" >> $GITHUB_STEP_SUMMARY
             done
+          fi
+
+          if [[ "${{ needs.build-and-test.result }}" == "failure" ]]; then
+            echo "## :x: Build or tests failed" >> $GITHUB_STEP_SUMMARY
+            echo "### Failed projects:" >> $GITHUB_STEP_SUMMARY
+            cat $GITHUB_WORKSPACE/failed_projects.txt >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No failed projects file found." >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.build-and-test.result }}" == "success" ]]; then
+            echo "## :white_check_mark: All builds and tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## :warning: Build and test job was skipped or canceled" >> $GITHUB_STEP_SUMMARY
           fi
