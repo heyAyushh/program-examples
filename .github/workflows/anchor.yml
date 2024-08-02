@@ -96,6 +96,8 @@ jobs:
       matrix:
         index: ${{ fromJson(needs.changes.outputs.matrix) }}
     name: build-and-test-group-${{ matrix.index }}
+    outputs:
+      failed_projects: ${{ steps.set-failed.outputs.failed_projects }}
     steps:
       - uses: actions/checkout@v4
       - uses: heyAyushh/setup-anchor@v4.0
@@ -168,6 +170,12 @@ jobs:
             echo "::endgroup::"
             exit 1
           fi
+      - name: Set failed projects output
+        id: set-failed
+        if: failure()
+        run: |
+          failed_projects=$(cat $GITHUB_WORKSPACE/failed_projects.txt | jq -R -s -c 'split("\n")[:-1]')
+          echo "failed_projects=$failed_projects" >> $GITHUB_OUTPUT
 
   summary:
     needs: [changes, build-and-test]
@@ -181,7 +189,7 @@ jobs:
           echo "- Total projects: ${{ needs.changes.outputs.total_projects }}" >> $GITHUB_STEP_SUMMARY
 
           echo "<details>" >> $GITHUB_STEP_SUMMARY
-          echo "<summary>Projects processed </summary>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Projects processed (click to expand)</summary>" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '${{ needs.changes.outputs.changed_projects }}' | jq -r '.[]' | while read project; do
             echo "- $project" >> $GITHUB_STEP_SUMMARY
@@ -194,13 +202,14 @@ jobs:
             echo "<details>" >> $GITHUB_STEP_SUMMARY
             echo "<summary>Failed projects (click to expand)</summary>" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            if [[ -f $GITHUB_WORKSPACE/failed_projects.txt ]]; then
-              while IFS=: read -r project failure_reason; do
+            failed_projects='${{ needs.build-and-test.outputs.failed_projects }}'
+            if [[ -n "$failed_projects" ]]; then
+              echo "$failed_projects" | jq -r '.[]' | while IFS=: read -r project failure_reason; do
                 echo "- **$project**" >> $GITHUB_STEP_SUMMARY
                 echo "  - Failure reason: $failure_reason" >> $GITHUB_STEP_SUMMARY
-              done < $GITHUB_WORKSPACE/failed_projects.txt
+              done
             else
-              echo "No failed projects file found. This might indicate an unexpected error in the workflow." >> $GITHUB_STEP_SUMMARY
+              echo "No failed projects reported. This might indicate an unexpected error in the workflow." >> $GITHUB_STEP_SUMMARY
             fi
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "</details>" >> $GITHUB_STEP_SUMMARY
