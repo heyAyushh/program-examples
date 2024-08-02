@@ -59,9 +59,8 @@ jobs:
           fi
 
           if [[ -n "$projects" ]]; then
-            echo "::group::Projects to build and test"
+            echo "Projects to build and test"
             echo "$projects"
-            echo "::endgroup::"
             total_projects=$(echo "$projects" | wc -l)
             echo "Total projects: $total_projects"
             echo "total_projects=$total_projects" >> $GITHUB_OUTPUT
@@ -98,7 +97,7 @@ jobs:
       fail-fast: false
       matrix:
         index: ${{ fromJson(needs.changes.outputs.matrix) }}
-    name: Build and Test Group ${{ matrix.index }}
+    name: build-and-test-group-${{ matrix.index }}
     steps:
       - uses: actions/checkout@v4
       - uses: heyAyushh/setup-anchor@v4.0
