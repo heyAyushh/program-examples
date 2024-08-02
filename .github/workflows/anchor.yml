@@ -12,8 +12,8 @@ on:
       - main
 
 env:
-  MAX_JOBS: 128
-  MIN_PROJECTS_PER_JOB: 1
+  MAX_JOBS: 64
+  MIN_PROJECTS_PER_JOB: 4
   MIN_PROJECTS_FOR_MATRIX: 4
 
 jobs:
